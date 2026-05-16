@@ -625,6 +625,18 @@ def _run_approval_flow(project_dir: Path) -> bool:
                     project_dir / ".relay/tasks.json"
                 )
                 print("\n✅ Tasks database created!")
+
+                # Generate Codex summaries for all roles
+                print("\n📝 Generating Codex summaries for all roles...")
+                from core.codex_writer import regenerate_summaries
+                import asyncio
+                summary_success = asyncio.run(regenerate_summaries(project_dir))
+
+                if summary_success:
+                    print("✅ Codex summaries generated")
+                else:
+                    print("⚠️  Some summaries failed (agents can still work, but prompts will be longer)")
+
                 print("\nNext: Run 'relay start' to begin execution")
                 return True
             else:
