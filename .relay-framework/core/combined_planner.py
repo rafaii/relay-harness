@@ -910,6 +910,15 @@ def _populate_tasks_database(project_dir: Path) -> bool:
         tasks = tasks_data['tasks']
         logger.info(f"Found {len(tasks)} tasks in tasks.json")
 
+        # Validate task quality (warnings only, not blockers)
+        validation_warnings = _validate_task_descriptions(tasks)
+        if validation_warnings:
+            logger.warning("⚠️  Task quality issues detected (not blocking):")
+            for warning in validation_warnings:
+                logger.warning(f"  - {warning}")
+            logger.warning("\nThese may cause agent failures during execution.")
+            logger.warning("Consider regenerating with 'relay start' if issues persist.\n")
+
         # Initialize database
         db = TaskDatabase(project_dir)
 
@@ -951,3 +960,57 @@ def _populate_tasks_database(project_dir: Path) -> bool:
     except Exception as e:
         logger.error(f"Failed to populate database: {e}")
         return False
+
+
+def _validate_task_descriptions(tasks: list) -> list:
+    """
+    Validate task description quality.
+
+    Returns list of warning messages (not errors - validation is non-blocking).
+
+    Args:
+        tasks: List of task dictionaries
+
+    Returns:
+        List of warning strings
+    """
+    warnings = []
+
+    for idx, task_data in enumerate(tasks):
+        task_id = task_data.get('id', f'task-{idx}')
+        desc = task_data.get('description', '')
+
+        # 1. Minimum length check
+        if len(desc) < 200:
+            warnings.append(
+                f"{task_id}: Short description ({len(desc)} chars, recommend 200+)"
+            )
+
+        # 2. Must reference at least one docs/ file
+        doc_refs = ['docs/system_design', 'docs/security_policy', 'docs/ui_standards']
+        if not any(ref in desc for ref in doc_refs):
+            warnings.append(
+                f"{task_id}: No references to planning documents"
+            )
+
+        # 3. Should contain acceptance criteria
+        if 'acceptance' not in desc.lower() and 'criteria' not in desc.lower():
+            warnings.append(
+                f"{task_id}: Missing acceptance criteria"
+            )
+
+        # 4. Frontend tasks should reference ui_standards
+        role = task_data.get('role', '')
+        if 'frontend' in role.lower() and 'ui_standards' not in desc:
+            warnings.append(
+                f"{task_id}: Frontend task missing UI standards reference"
+            )
+
+        # 5. Security-sensitive tasks should reference security_policy
+        security_keywords = ['auth', 'login', 'password', 'encrypt', 'permission', 'token']
+        if any(kw in desc.lower() for kw in security_keywords) and 'security_policy' not in desc:
+            warnings.append(
+                f"{task_id}: Security-sensitive task missing security policy reference"
+            )
+
+    return warnings

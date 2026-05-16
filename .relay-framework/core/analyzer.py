@@ -173,12 +173,23 @@ def run_codebase_analysis(project_dir: Path) -> bool:
         with open(draft_file, 'r') as f:
             tasks_data = json.load(f)
 
+        # Validate task quality
+        validation_warnings = _validate_task_quality(tasks_data.get('tasks', []))
+
         print(f"\nThe analyzer identified {len(tasks_data.get('tasks', []))} tasks:\n")
 
         # Show summary of tasks
         for task in tasks_data.get('tasks', []):
             print(f"  [{task['id']}] {task['title']}")
             print(f"      Phase: {task['phase']} | Role: {task['role']} | Complexity: {task.get('complexity', '?')}")
+            print()
+
+        if validation_warnings:
+            print("\n⚠️  Task quality warnings:")
+            for warning in validation_warnings[:5]:  # Show first 5
+                print(f"  - {warning}")
+            if len(validation_warnings) > 5:
+                print(f"  ... and {len(validation_warnings) - 5} more")
             print()
 
         print("\nOptions:")
@@ -352,3 +363,32 @@ def _extract_key_source_files(project_dir: Path) -> str:
                 pass
 
     return "\n".join(output) if output else "No high-signal source files found (may need manual review)"
+
+
+def _validate_task_quality(tasks: list) -> list:
+    """
+    Validate task description quality.
+    Returns list of warning messages (non-blocking).
+    """
+    warnings = []
+
+    for idx, task_data in enumerate(tasks):
+        task_id = task_data.get('id', f'task-{idx}')
+        desc = task_data.get('description', '')
+
+        # Short description
+        if len(desc) < 200:
+            warnings.append(
+                f"{task_id}: Short description ({len(desc)} chars, recommend 200+)"
+            )
+
+        # Missing doc references
+        doc_refs = ['docs/system_design', 'docs/security_policy', 'docs/ui_standards']
+        if not any(ref in desc for ref in doc_refs):
+            warnings.append(f"{task_id}: No doc references")
+
+        # Missing acceptance criteria
+        if 'acceptance' not in desc.lower() and 'criteria' not in desc.lower():
+            warnings.append(f"{task_id}: No acceptance criteria")
+
+    return warnings

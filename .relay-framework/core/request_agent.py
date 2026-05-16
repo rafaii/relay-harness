@@ -259,6 +259,15 @@ def run_request_agent(project_dir: Path, user_request: str) -> bool:
                 logger.error("request_tasks.json contains no tasks")
                 return False
 
+            # Validate task quality (warnings only)
+            validation_warnings = _validate_task_quality(tasks_data['tasks'])
+            if validation_warnings:
+                logger.warning("⚠️  Task quality warnings:")
+                for warning in validation_warnings[:5]:
+                    logger.warning(f"  - {warning}")
+                if len(validation_warnings) > 5:
+                    logger.warning(f"  ... and {len(validation_warnings) - 5} more")
+
             logger.info(f"✅ Generated {len(tasks_data['tasks'])} tasks")
 
         except (json.JSONDecodeError, KeyError) as e:
@@ -458,3 +467,42 @@ def _merge_tasks_into_database(project_dir: Path, db, tasks_file: Path) -> bool:
         import traceback
         traceback.print_exc()
         return False
+
+
+def _validate_task_quality(tasks: list) -> list:
+    """
+    Validate task description quality.
+    Returns list of warning messages (non-blocking).
+    """
+    warnings = []
+
+    for idx, task_data in enumerate(tasks):
+        task_id = task_data.get('id', f'task-{idx}')
+        desc = task_data.get('description', '')
+
+        # Short description
+        if len(desc) < 200:
+            warnings.append(
+                f"{task_id}: Short description ({len(desc)} chars, recommend 200+)"
+            )
+
+        # Missing doc references
+        doc_refs = ['docs/system_design', 'docs/security_policy', 'docs/ui_standards']
+        if not any(ref in desc for ref in doc_refs):
+            warnings.append(f"{task_id}: No doc references")
+
+        # Missing acceptance criteria
+        if 'acceptance' not in desc.lower() and 'criteria' not in desc.lower():
+            warnings.append(f"{task_id}: No acceptance criteria")
+
+        # Frontend tasks should reference UI standards
+        role = task_data.get('role', '')
+        if 'frontend' in role.lower() and 'ui_standards' not in desc:
+            warnings.append(f"{task_id}: Frontend task missing UI standards ref")
+
+        # Security-sensitive tasks
+        security_keywords = ['auth', 'login', 'password', 'encrypt', 'permission', 'token']
+        if any(kw in desc.lower() for kw in security_keywords) and 'security_policy' not in desc:
+            warnings.append(f"{task_id}: Security task missing security policy ref")
+
+    return warnings

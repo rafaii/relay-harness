@@ -10,3 +10,6 @@ Backup/
 
 # Local environment variables
 .env
+
+# macOS
+.DS_Store
