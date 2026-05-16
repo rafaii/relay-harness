@@ -1,0 +1,34 @@
+# Relay Framework - Task Execution Artifacts
+# ============================================
+# Add this to your project's .gitignore or create .relay/.gitignore
+
+# Task database (contains local task state)
+tasks.db
+tasks.db-journal
+tasks.db-wal
+
+# Agent logs (verbose execution logs)
+logs/
+
+# Test artifacts
+tests/
+*_screenshots/
+*_test_output.log
+
+# Temporary files
+*.tmp
+*.temp
+
+# Codex summaries (regenerated automatically)
+codex_summary_*.md
+
+# ChromaDB (if using vector context)
+chroma_db/
+
+# Keep these files (planning and config)
+!config.yaml
+!config.json
+!tasks.json
+!tasks_draft.json
+!*_summary.md
+!*_tasks.json
