@@ -582,6 +582,17 @@ class AgentSpawner:
                 # Agent has finished
                 elapsed = (datetime.now() - started_at).total_seconds()
 
+                # Ensure process is fully terminated and reaped
+                try:
+                    process.wait(timeout=1)  # Reap zombie if needed
+                except subprocess.TimeoutExpired:
+                    # Process is stuck, force kill
+                    logger.warning(f"Agent {agent_id} process stuck after exit, force killing")
+                    process.kill()
+                    process.wait()
+                except Exception as e:
+                    logger.warning(f"Error reaping process for agent {agent_id}: {e}")
+
                 # Close log file handle if still open
                 try:
                     if log_handle and not log_handle.closed:
@@ -606,9 +617,88 @@ class AgentSpawner:
 
         # Remove completed agents from tracking
         for agent_id in to_remove:
+            # Double-check process is terminated before removing from tracking
+            if agent_id in self.running_agents:
+                process = self.running_agents[agent_id][0]
+                try:
+                    # Force kill if somehow still running
+                    if process.poll() is None:
+                        logger.warning(f"Agent {agent_id} still running after completion check, force killing")
+                        process.kill()
+                        process.wait(timeout=1)
+                except Exception as e:
+                    logger.error(f"Error force-killing agent {agent_id}: {e}")
+
             del self.running_agents[agent_id]
 
         return completed
+
+    def cleanup_leaked_processes(self):
+        """
+        Periodic cleanup to find and kill any leaked agent processes.
+
+        Should be called every ~60 seconds to catch any processes that somehow
+        escaped normal cleanup (zombies, orphans, etc.)
+        """
+        leaked = []
+
+        for agent_id, (process, task_id, started_at, log_handle) in list(self.running_agents.items()):
+            try:
+                # Check if process is actually running
+                exit_code = process.poll()
+
+                if exit_code is not None:
+                    # Process already exited but wasn't caught by check_completed_agents
+                    # This shouldn't happen, but clean it up anyway
+                    logger.warning(f"Found leaked process {agent_id} (already exited with code {exit_code})")
+                    leaked.append(agent_id)
+
+                    # Close log handle
+                    try:
+                        if log_handle and not log_handle.closed:
+                            log_handle.close()
+                    except Exception:
+                        pass
+
+                    # Reap zombie
+                    try:
+                        process.wait(timeout=1)
+                    except Exception:
+                        pass
+
+                # Check for stuck processes (running >2 hours)
+                elapsed = (datetime.now() - started_at).total_seconds()
+                if elapsed > 7200:  # 2 hours
+                    logger.warning(f"Agent {agent_id} has been running for {elapsed/3600:.1f} hours, force killing")
+                    try:
+                        process.kill()
+                        process.wait(timeout=5)
+                    except Exception as e:
+                        logger.error(f"Failed to kill stuck agent {agent_id}: {e}")
+
+                    leaked.append(agent_id)
+
+                    # Close log handle
+                    try:
+                        if log_handle and not log_handle.closed:
+                            log_handle.close()
+                    except Exception:
+                        pass
+
+            except Exception as e:
+                logger.error(f"Error checking process {agent_id}: {e}")
+
+        # Remove leaked agents
+        for agent_id in leaked:
+            if agent_id in self.running_agents:
+                try:
+                    self._unregister_agent_from_db(agent_id)
+                except Exception:
+                    pass
+                del self.running_agents[agent_id]
+
+        if leaked:
+            logger.info(f"Cleaned up {len(leaked)} leaked processes: {leaked}")
 
     def wait_for_agent(self, agent_id: str, timeout: Optional[float] = None) -> Tuple[Optional[int], Optional[str]]:
         """

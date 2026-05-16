@@ -101,6 +101,7 @@ class Executor:
             self.dashboard.start()
 
         iteration = 0
+        last_cleanup = datetime.now()
 
         try:
             while not self.shutdown_requested:
@@ -112,6 +113,11 @@ class Executor:
                     completed = self.spawner.check_completed_agents()
                     if completed:
                         await self._handle_completed_agents(completed)
+
+                    # 1.1. Periodic cleanup of leaked processes (every 60 seconds)
+                    if (datetime.now() - last_cleanup).total_seconds() > 60:
+                        self.spawner.cleanup_leaked_processes()
+                        last_cleanup = datetime.now()
 
                     # 1.4. Update Living Codex for completed tasks
                     await self._update_codex_for_completed_tasks()
