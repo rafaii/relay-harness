@@ -177,7 +177,8 @@ class Executor:
 
             # Determine agent role from agent_id
             agent_role = None
-            if 'frontend_developer' in agent_id or 'backend_developer' in agent_id or 'database' in agent_id:
+            if ('frontend_developer' in agent_id or 'backend_developer' in agent_id or
+                'database' in agent_id or 'ui_designer' in agent_id):
                 agent_role = 'developer'
             elif 'qa' in agent_id:
                 agent_role = 'qa'
@@ -675,7 +676,8 @@ class Executor:
                     role = task.role
 
                 # Validate role
-                if role not in ["frontend_developer", "backend_developer", "database_developer"]:
+                valid_roles = ["frontend_developer", "backend_developer", "database_developer", "ui_designer"]
+                if role not in valid_roles:
                     logger.warning(f"Task {task.id} has invalid role: {role}. Defaulting to backend_developer")
                     role = "backend_developer"
 
@@ -693,6 +695,8 @@ class Executor:
                 # Step 3: Generate prompt with agent info
                 if role == "database_developer":
                     prompt = self._generate_database_prompt(task, available_agent_id, agent_name)
+                elif role == "ui_designer":
+                    prompt = self._generate_ui_designer_prompt(task, available_agent_id, agent_name)
                 else:
                     prompt = self._generate_developer_prompt(task, role, available_agent_id, agent_name)
 
@@ -1276,6 +1280,118 @@ Without sys.exit(0), the process takes 30s-2min to shutdown, blocking other agen
 **Once you update the status, EXIT - do not wait for further instructions**
 """
 
+
+    def _generate_ui_designer_prompt(self, task: Task, agent_id: str, agent_name: str) -> str:
+        """
+        Generate prompt for UI Designer agent.
+
+        Args:
+            task: Task to generate prompt for
+            agent_id: Agent ID (e.g., "ui_designer_1")
+            agent_name: Human-readable agent name (e.g., "Pixel")
+
+        Returns:
+            UI Designer prompt string
+        """
+        # Extract relevant context from UI standards
+        from core.context_extractor import extract_relevant_context
+        relevant_context = extract_relevant_context(
+            self.project_dir,
+            task.description or "",
+            "ui_designer"
+        )
+
+        return f"""# UI Design Task: {task.id}
+
+You are **{agent_name}** (Agent ID: `{agent_id}`) working on UI design task **{task.id}**.
+
+## Instructions
+
+1. **Read task details from database**:
+   - Connect to `.relay/tasks.db`
+   - Query: SELECT * FROM tasks WHERE id = "{task.id}"
+   - The description field contains design requirements
+
+2. **Review relevant UI standards**:
+
+{relevant_context}
+
+   **Note:** Read full `docs/ui_standards.md` and `docs/system_design.md` for complete context.
+
+3. **Create UI design deliverables**:
+
+   Your output depends on the task:
+
+   **For Wireframes:**
+   - Create ASCII/Markdown wireframes in `docs/wireframes/`
+   - Show layout, component placement, navigation flow
+   - Include annotations for interactions
+
+   **For Component Specifications:**
+   - Document in `docs/components/[component-name].md`
+   - Include: props, variants, states, accessibility requirements
+   - Reference design system (colors, typography, spacing)
+
+   **For Design System Creation:**
+   - Define in `docs/ui_standards.md` (if not exists, create it)
+   - Include: color palette, typography scale, spacing system
+   - Component library choices and naming conventions
+   - Accessibility guidelines
+
+4. **Ensure consistency**:
+   - Follow existing UI standards (if they exist)
+   - Use standard design patterns
+   - Consider mobile/responsive requirements
+   - Follow accessibility best practices (WCAG 2.1 AA)
+
+5. **Document your work**:
+   - Create/update `.relay/logs/{task.id}.md`:
+     ```markdown
+     ### ✅ Design Complete
+     **Time:** [current timestamp YYYY-MM-DD HH:MM:SS]
+     **Agent:** {agent_name} ({agent_id})
+     **Status:** Ready for QA
+
+     **Design Deliverables:**
+     - [List files created]
+     - [Key design decisions made]
+
+     **Design Notes:**
+     - [Important considerations for implementation]
+     - [Component dependencies]
+     - [Accessibility requirements]
+
+     **Files Created:**
+     - `docs/wireframes/[filename].md`
+     - `docs/components/[component].md`
+     ```
+
+6. **Update task status**:
+   - If design completed successfully:
+     * UPDATE tasks SET status='ready_for_qa', assignee=NULL WHERE id='{task.id}'
+   - If unable to complete:
+     * UPDATE tasks SET status='failed', assignee=NULL WHERE id='{task.id}'
+     * Document why in the task log
+
+7. **EXIT immediately** after updating status:
+```python
+import sys
+sys.exit(0)
+```
+
+**Design Checklist:**
+- [ ] Follows existing UI standards
+- [ ] Responsive/mobile-friendly
+- [ ] Accessible (WCAG 2.1 AA)
+- [ ] Consistent with design system
+- [ ] Clear component specifications
+- [ ] Implementation-ready
+
+**SINGLE source of truth:**
+- tasks table: Task data and status
+- `.relay/logs/{task.id}.md`: Design history
+- Design files in `docs/wireframes/` and `docs/components/`
+"""
 
     def _generate_database_prompt(self, task: Task, agent_id: str, agent_name: str) -> str:
         """

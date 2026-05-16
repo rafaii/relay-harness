@@ -607,13 +607,18 @@ Create a JSON file with ALL implementation tasks.
 **CRITICAL: Task Role Assignment**
 
 Every task MUST be assigned to ONE of these roles:
+- **ui_designer**: Wireframes, design mockups, component specifications, design system creation
 - **frontend_developer**: UI components, pages, forms, styling, client-side logic, routing, state management
 - **backend_developer**: API endpoints, database models, business logic, authentication, background jobs, integrations
 
 **RULES:**
 1. Do NOT use generic "developer" role - it doesn't exist
 2. Do NOT use "fullstack_developer" - split into separate frontend/backend tasks
-3. If a task involves both frontend and backend:
+3. If UI design is needed BEFORE implementation:
+   - Create ui_designer task first (wireframes, specs)
+   - Make frontend tasks depend on the design task
+   - Example: "Design user dashboard wireframe" (ui_designer) → "Implement dashboard component" (frontend_developer)
+4. If a task involves both frontend and backend:
    - Split into TWO tasks (one frontend, one backend)
    - Use dependencies to sequence them
    - Example: "Create user API" (backend_developer) + "Create user profile page" (frontend_developer with dependency on API task)

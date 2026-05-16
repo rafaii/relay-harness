@@ -31,7 +31,8 @@ DEFAULT_AGENT_MODELS = {
     'interviewer': 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',        # Legacy: Interview agent (kept for backward compatibility)
     'architect': 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',          # Legacy: System design and architecture
     'security_architect': 'us.anthropic.claude-sonnet-4-5-20250929-v1:0', # Legacy: Security policy creation
-    'ui_agent': 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',           # UI/wireframe generation (on-demand in Section 2)
+    'ui_designer': 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',        # UI design, wireframes, component specs
+    'ui_agent': 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',           # Legacy: UI/wireframe generation (use ui_designer instead)
     'planner': 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',            # Legacy: Master plan and task breakdown
 
     # SECTION 2: Execution Agents
@@ -82,6 +83,13 @@ DEFAULT_AGENT_NAMES = {
     'database_2': 'Query',
     'database_3': 'Index',
     'database_4': 'Optimize',
+
+    # UI Designer (0-4)
+    'ui_designer': 'Pixel',
+    'ui_designer_1': 'Canvas',
+    'ui_designer_2': 'Sketch',
+    'ui_designer_3': 'Figma',
+    'ui_designer_4': 'Adobe',
 
     # Coordinator
     'coordinator': 'Atlas',
