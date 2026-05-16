@@ -97,16 +97,18 @@ High-signal source files (schemas, models, routes):
    }}
    ```
 
-   **Required fields for each task:**
+   **Required fields for each task (DO NOT add any other fields):**
    - id: Unique ID (e.g., SEC-001, REFACTOR-001, TEST-001)
    - title: Short summary (under 80 chars)
-   - description: Comprehensive instructions (200+ chars) with acceptance criteria
+   - description: Comprehensive instructions (200+ chars) with acceptance criteria and doc references
    - phase: "bug_fixes", "improvements", "refactoring", "testing", "documentation"
    - role: "backend_developer", "frontend_developer", "qa", "security", "database", "devops"
    - agent_type: "backend", "frontend", "qa", "security", "database", "devops"
-   - dependencies: Array of task IDs this depends on (or empty array)
+   - dependencies: Array of task IDs this depends on (or empty array [])
    - priority: 1-5 (1=highest)
    - complexity: 1-5 (1=simple, 5=complex)
+
+   **IMPORTANT:** Only include these 9 fields. Do NOT add extra fields like "references", "notes", "tags", etc.
 
 4. Write docs/codex.md — the Living Codex documenting ONLY what exists NOW:
 
@@ -329,6 +331,13 @@ def _populate_tasks_database_from_draft(project_dir: Path) -> bool:
 
         db = TaskDatabase(project_dir)
 
+        # Valid Task model fields (filter out any extra fields from analyzer)
+        VALID_TASK_FIELDS = {
+            'id', 'title', 'description', 'status', 'phase', 'assignee',
+            'dependencies', 'priority', 'complexity', 'role', 'agent_type',
+            'created_at', 'updated_at'
+        }
+
         for task_data in tasks_data.get('tasks', []):
             # Ensure agent_type is set
             if 'agent_type' not in task_data:
@@ -338,7 +347,18 @@ def _populate_tasks_database_from_draft(project_dir: Path) -> bool:
                     task_data['agent_type'] = 'backend'
 
             task_data['status'] = 'todo'
-            db.create_task(task_data)
+
+            # Ensure dependencies is a list (not null or missing)
+            if 'dependencies' not in task_data or task_data['dependencies'] is None:
+                task_data['dependencies'] = []
+            elif not isinstance(task_data['dependencies'], list):
+                # Convert to list if it's a string or other type
+                task_data['dependencies'] = []
+
+            # Filter to only valid fields (remove any extra fields like 'references')
+            filtered_task = {k: v for k, v in task_data.items() if k in VALID_TASK_FIELDS}
+
+            db.create_task(filtered_task)
 
         stats = db.get_statistics()
         logger.info(f"Created {stats['total']} tasks in database")
