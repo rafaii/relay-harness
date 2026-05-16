@@ -26,6 +26,57 @@ from .database import TaskDatabase
 logger = logging.getLogger(__name__)
 
 
+# Checkpointing constants
+PLANNING_PROGRESS_KEY = "planning_progress"
+
+
+def init_planning_state(db: TaskDatabase) -> dict:
+    """Initialize planning progress state in database metadata."""
+    state = {
+        "phase": "starting",
+        "started_at": datetime.now().isoformat(),
+        "documents": {
+            "system_design.md": {"status": "pending", "size": 0},
+            "security_policy.md": {"status": "pending", "size": 0},
+            "ui_standards.md": {"status": "pending", "size": 0},
+            "master_plan.md": {"status": "pending", "size": 0},
+            "tasks.json": {"status": "pending", "size": 0}
+        },
+        "attempts": []
+    }
+    db.metadata.set_value(PLANNING_PROGRESS_KEY, state)
+    return state
+
+
+def verify_and_checkpoint_documents(project_dir: Path) -> dict:
+    """Check each document and update checkpoint incrementally."""
+    db = TaskDatabase(project_dir)
+    state = db.metadata.get_value(PLANNING_PROGRESS_KEY) or {}
+
+    docs = {
+        "system_design.md": project_dir / "docs" / "system_design.md",
+        "security_policy.md": project_dir / "docs" / "security_policy.md",
+        "ui_standards.md": project_dir / "docs" / "ui_standards.md",
+        "master_plan.md": project_dir / "docs" / "master_plan.md",
+        "tasks.json": project_dir / ".relay" / "tasks.json"
+    }
+
+    for name, path in docs.items():
+        if path.exists():
+            size = path.stat().st_size
+            # Validate non-trivial content (>500 bytes)
+            if size < 500:
+                state["documents"][name] = {"status": "error", "size": size, "error": "File too small"}
+            else:
+                state["documents"][name] = {"status": "ok", "size": size}
+        else:
+            state["documents"][name] = {"status": "missing", "size": 0}
+
+    state["last_checked"] = datetime.now().isoformat()
+    db.metadata.set_value(PLANNING_PROGRESS_KEY, state)
+    return state
+
+
 # Combined Planning Prompt - Integrates all Section 1 agents
 COMBINED_PLANNING_PROMPT = """# Combined Planning Agent for Relay Framework
 
@@ -667,6 +718,42 @@ def run_combined_planning(project_dir: Path) -> bool:
     print("\nTime savings: ~50-65% faster than sequential agents!")
     print("\nLet's begin the interview...\n")
 
+    # Check for partial completion and offer resume
+    try:
+        db = TaskDatabase(project_dir)
+        existing_state = db.metadata.get_value(PLANNING_PROGRESS_KEY)
+
+        if existing_state and existing_state.get("phase") in ["timeout", "failed"]:
+            completed_docs = [k for k, v in existing_state["documents"].items() if v["status"] == "ok"]
+            missing_docs = [k for k, v in existing_state["documents"].items() if v["status"] != "ok"]
+
+            if len(completed_docs) > 0:
+                print(f"\n⚠️  Found partial planning session:")
+                print(f"  ✓ Completed: {', '.join(completed_docs)}")
+                print(f"  ✗ Missing: {', '.join(missing_docs)}")
+                print("\nOptions:")
+                print("  1. Resume: Generate only missing documents")
+                print("  2. Restart: Delete all and start fresh")
+                choice = input("Choice (1/2): ").strip()
+
+                if choice == "1":
+                    print("\n⚠️  Resume feature not yet fully implemented.")
+                    print("For now, please manually complete the missing documents or choose restart.")
+                    return False
+                elif choice == "2":
+                    # Clear state and restart
+                    db.metadata.set_value(PLANNING_PROGRESS_KEY, None)
+                    print("\nRestarting planning from scratch...\n")
+                else:
+                    print("Invalid choice. Aborting.")
+                    return False
+
+        # Initialize fresh state
+        init_planning_state(db)
+    except Exception as e:
+        logger.warning(f"Could not check for existing planning state: {e}")
+        # Continue anyway
+
     # Get model ID for combined planner
     model_id = get_model_id_for_agent('combined_planner')
     logger.info(f"Launching Combined Planning agent (model: {model_id})...")
@@ -730,11 +817,23 @@ def run_combined_planning(project_dir: Path) -> bool:
         logger.info(f"  - {master_plan_file}")
         logger.info(f"  - {tasks_json_file}")
 
+        # Checkpoint successful document creation
+        state = verify_and_checkpoint_documents(project_dir)
+
         # Convert tasks.json to tasks.db
         logger.info("Converting tasks.json to tasks database...")
         success = _populate_tasks_database(project_dir)
 
         if success:
+            # Mark planning as completed
+            try:
+                db = TaskDatabase(project_dir)
+                state["phase"] = "completed"
+                state["completed_at"] = datetime.now().isoformat()
+                db.metadata.set_value(PLANNING_PROGRESS_KEY, state)
+            except Exception:
+                pass  # Best effort checkpoint
+
             logger.info("✅ Task database populated successfully!")
             logger.info("🎉 Section 1 complete!")
             return True
@@ -743,14 +842,41 @@ def run_combined_planning(project_dir: Path) -> bool:
             return False
 
     except subprocess.TimeoutExpired:
+        # Checkpoint progress before reporting error
+        state = verify_and_checkpoint_documents(project_dir)
+        state["phase"] = "timeout"
+        state["error"] = "40-minute timeout"
+
+        try:
+            db = TaskDatabase(project_dir)
+            db.metadata.set_value(PLANNING_PROGRESS_KEY, state)
+        except Exception:
+            pass  # Best effort checkpoint
+
+        # Report which docs succeeded
+        completed = [k for k, v in state["documents"].items() if v["status"] == "ok"]
+        missing = [k for k, v in state["documents"].items() if v["status"] != "ok"]
+
         logger.error("Combined planning agent timed out (40-minute limit)")
+        logger.error(f"Completed documents: {', '.join(completed) if completed else 'none'}")
+        logger.error(f"Missing documents: {', '.join(missing)}")
         logger.error("This can happen if:")
         logger.error("  1. Interview took too long (try to keep responses concise)")
         logger.error("  2. Document generation is complex (normal for large projects)")
         logger.error("  3. Agent got stuck (check logs)")
-        logger.error("\nTip: You can manually create the docs and run 'relay start' again to resume")
+        logger.error("\nTip: Run 'relay start' again to resume from where you left off")
         return False
     except Exception as e:
+        # Checkpoint progress before reporting error
+        try:
+            state = verify_and_checkpoint_documents(project_dir)
+            state["phase"] = "failed"
+            state["error"] = str(e)
+            db = TaskDatabase(project_dir)
+            db.metadata.set_value(PLANNING_PROGRESS_KEY, state)
+        except Exception:
+            pass  # Best effort checkpoint
+
         logger.error(f"Combined planning agent failed: {e}")
         return False
 
