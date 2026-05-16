@@ -174,7 +174,7 @@ class Executor:
 
             # Determine agent role from agent_id
             agent_role = None
-            if 'frontend_developer' in agent_id or 'backend_developer' in agent_id:
+            if 'frontend_developer' in agent_id or 'backend_developer' in agent_id or 'database' in agent_id:
                 agent_role = 'developer'
             elif 'qa' in agent_id:
                 agent_role = 'qa'
@@ -201,6 +201,11 @@ class Executor:
                     )
 
                     logger.info(f"Task {task_id} marked as ready_for_qa")
+
+                    # Check if migration needed for backend tasks
+                    if 'backend_developer' in agent_id:
+                        await self._check_and_create_migration_task(task)
+
                 else:
                     # QA/Security agent completed - they already set the status
                     # Just clear the assignee if not already cleared
@@ -627,7 +632,7 @@ class Executor:
                     role = task.role
 
                 # Validate role
-                if role not in ["frontend_developer", "backend_developer"]:
+                if role not in ["frontend_developer", "backend_developer", "database_developer"]:
                     logger.warning(f"Task {task.id} has invalid role: {role}. Defaulting to backend_developer")
                     role = "backend_developer"
 
@@ -643,7 +648,10 @@ class Executor:
                 agent_name = get_agent_name(available_agent_id)
 
                 # Step 3: Generate prompt with agent info
-                prompt = self._generate_developer_prompt(task, role, available_agent_id, agent_name)
+                if role == "database_developer":
+                    prompt = self._generate_database_prompt(task, available_agent_id, agent_name)
+                else:
+                    prompt = self._generate_developer_prompt(task, role, available_agent_id, agent_name)
 
                 # Step 4: SPAWN THE AGENT FIRST (adds to running_agents immediately)
                 success, agent_id = self.spawner.spawn_agent(
@@ -1226,6 +1234,126 @@ Without sys.exit(0), the process takes 30s-2min to shutdown, blocking other agen
 """
 
 
+    def _generate_database_prompt(self, task: Task, agent_id: str, agent_name: str) -> str:
+        """
+        Generate prompt for Database agent (migration generation).
+
+        Args:
+            task: Task to generate prompt for
+            agent_id: Agent ID (e.g., "database_1")
+            agent_name: Human-readable agent name (e.g., "Schema")
+
+        Returns:
+            Database prompt string
+        """
+        # Extract relevant context from system design
+        from core.context_extractor import extract_relevant_context
+        relevant_context = extract_relevant_context(
+            self.project_dir,
+            task.description or "",
+            "database"
+        )
+
+        return f"""# Database Migration Task: {task.id}
+
+You are **{agent_name}** (Agent ID: `{agent_id}`) creating a database migration for task **{task.id}**.
+
+## Instructions
+
+1. **Read task details from database**:
+   - Connect to `.relay/tasks.db`
+   - Query: SELECT * FROM tasks WHERE id = "{task.id}"
+   - The description field explains what schema changes need migration files
+
+2. **Read parent task work log**:
+   - Your task description mentions a parent task (e.g., "for task BE-001")
+   - Read `.relay/logs/[parent-task-id].md` to see what was actually implemented
+   - Identify all database schema changes made
+
+3. **Review relevant system design sections**:
+
+{relevant_context}
+
+   **Note:** Read full `docs/system_design.md` if you need more database architecture context.
+
+4. **Detect migration framework**:
+   - Check project for: Django migrations, Prisma schema, Alembic, or raw SQL
+   - Read existing migration files to understand naming/structure conventions
+   - Follow the same pattern for your migration
+
+5. **Generate migration file**:
+   - **Django**: Create file in `<app>/migrations/XXXX_<description>.py`
+   - **Prisma**: Update `schema.prisma`, then run `npx prisma migrate dev --name <description>`
+   - **Alembic**: Run `alembic revision -m "<description>"` and edit generated file
+   - **Raw SQL**: Create `migrations/<timestamp>_<description>.sql`
+
+6. **Migration must include**:
+   - Forward migration (apply changes)
+   - Backward migration (rollback changes)
+   - All schema changes from parent task:
+     * New tables/models
+     * Modified columns/fields
+     * Indexes
+     * Foreign keys
+     * Constraints
+   - Data transformations if needed (with safety checks)
+
+7. **Test the migration**:
+   - Backup test database
+   - Run migration forward
+   - Verify schema changes applied
+   - Run migration backward
+   - Verify schema reverted correctly
+
+8. **Document your work**:
+   - Create/update `.relay/logs/{task.id}.md` with:
+     ```markdown
+     ### ✅ Migration Generated
+     **Time:** [current timestamp YYYY-MM-DD HH:MM:SS]
+     **Agent:** {agent_name} ({agent_id})
+     **Status:** Ready for QA
+
+     **Migration Summary:**
+     - Migration file: [path to file]
+     - Framework: [Django/Prisma/Alembic/SQL]
+     - Schema changes:
+       * [list all tables/columns/indexes modified]
+
+     **Testing:**
+     - Forward migration: [✅ PASS / ❌ FAIL]
+     - Backward migration: [✅ PASS / ❌ FAIL]
+
+     **Notes:**
+     - [Any important considerations for deploying this migration]
+     - [Data loss risks if any]
+     ```
+
+9. **Update task status**:
+   - If migration created and tested successfully:
+     * UPDATE tasks SET status='ready_for_qa', assignee=NULL WHERE id='{task.id}'
+   - If unable to create migration:
+     * UPDATE tasks SET status='failed', assignee=NULL WHERE id='{task.id}'
+     * Document why in the task log
+
+10. **EXIT immediately** after updating status:
+```python
+import sys
+sys.exit(0)
+```
+
+**CRITICAL REQUIREMENTS:**
+- Migration must be idempotent (safe to run multiple times)
+- Migration must be reversible
+- No hardcoded IDs or production data
+- Test both forward and backward migrations
+- Document any data transformation risks
+
+**SINGLE source of truth:**
+- tasks table: Task data and status
+- `.relay/logs/{task.id}.md`: Migration creation history
+- Once status is updated to ready_for_qa, EXIT immediately
+"""
+
     def _all_tasks_complete(self) -> bool:
         """
         Check if all tasks are completed.
@@ -1476,3 +1604,112 @@ Without sys.exit(0), the process takes 30s-2min to shutdown, blocking other agen
 
         except Exception as e:
             logger.error(f"Failed to update CLI dashboard: {e}", exc_info=True)
+
+    async def _check_and_create_migration_task(self, completed_task):
+        """
+        Check if a completed backend task requires a database migration.
+
+        Detects schema changes by looking for keywords in task description
+        and work log. If detected, creates a migration task.
+
+        Args:
+            completed_task: The completed backend task
+        """
+        try:
+            # Keywords that indicate database schema changes
+            schema_keywords = [
+                'model', 'schema', 'table', 'column', 'field',
+                'database', 'migration', 'index', 'constraint',
+                'foreign key', 'relationship', 'entity'
+            ]
+
+            # Check task description for schema-related keywords
+            desc_lower = (completed_task.description or "").lower()
+            has_schema_keywords = any(kw in desc_lower for kw in schema_keywords)
+
+            # Read task log to check what was actually implemented
+            log_file = self.project_dir / ".relay" / "logs" / f"{completed_task.id}.md"
+            log_mentions_schema = False
+
+            if log_file.exists():
+                log_content = log_file.read_text().lower()
+                log_mentions_schema = any(kw in log_content for kw in schema_keywords)
+
+            # If no schema changes detected, skip
+            if not has_schema_keywords and not log_mentions_schema:
+                logger.debug(f"No schema changes detected for task {completed_task.id}")
+                return
+
+            # Check if migration task already exists for this task
+            migration_id = f"MIG-{completed_task.id}"
+            existing = self.db.get_task(migration_id)
+            if existing:
+                logger.debug(f"Migration task {migration_id} already exists")
+                return
+
+            # Create migration task
+            migration_task = {
+                "id": migration_id,
+                "title": f"Create database migration for {completed_task.id}",
+                "description": f"""Generate database migration file for schema changes in task {completed_task.id}.
+
+**Parent Task:** {completed_task.title}
+
+**Context:**
+Read `.relay/logs/{completed_task.id}.md` to understand what database schema changes were made.
+
+**Requirements:**
+1. Review the code changes from task {completed_task.id}
+2. Identify all database schema modifications:
+   - New tables/models
+   - Modified columns/fields
+   - New indexes
+   - Foreign key constraints
+   - Data type changes
+
+3. Generate appropriate migration file:
+   - For Django: Create migration in appropriate app's migrations/ folder
+   - For Prisma: Update schema.prisma and generate migration
+   - For Alembic: Create new migration version
+   - For raw SQL: Create timestamped .sql migration file
+
+4. Ensure migration is:
+   - Idempotent (can run multiple times safely)
+   - Reversible (includes downgrade/rollback)
+   - Tested (doesn't break existing data)
+
+5. Reference docs/system_design.md for database architecture
+
+**Acceptance Criteria:**
+- Migration file created in correct location
+- Migration includes all schema changes from parent task
+- Migration is reversible
+- Migration tested locally
+- No data loss on upgrade/downgrade
+
+References: docs/system_design.md
+""",
+                "phase": completed_task.phase,
+                "role": "database_developer",
+                "agent_type": "database",
+                "dependencies": [completed_task.id],  # Must complete after parent
+                "priority": completed_task.priority,
+                "complexity": 2,
+                "status": "todo"
+            }
+
+            self.db.create_task(migration_task)
+
+            logger.info(f"✅ Created migration task: {migration_id} for {completed_task.id}")
+
+            self.db.log_action(
+                task_id=migration_id,
+                agent_id="system",
+                action="created",
+                notes=f"Auto-generated migration task for schema changes in {completed_task.id}"
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to create migration task for {completed_task.id}: {e}")
+            import traceback
+            traceback.print_exc()

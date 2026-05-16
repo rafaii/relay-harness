@@ -1,8 +1,3 @@
-Here's a production-quality README based on everything we've analyzed about the actual framework:
-
----
-
-```markdown
 # Relay 🏃
 
 > Pass the baton. Drop the baggage.
@@ -20,6 +15,7 @@ An interactive AI session interviews you about your project, then generates four
 
 **Section 2 — Execution**
 An async Python orchestrator polls the task database and dispatches up to 5 specialized AI agents in parallel. Each agent receives only the context relevant to its task, completes its work, and signals completion. Dependent tasks unlock automatically.
+
 ```
 
 You ──► Combined Planner ──► tasks.db
@@ -35,21 +31,21 @@ You ──► Combined Planner ──► tasks.db
 │
 ✅ Complete
 
-````
+```
 
 ---
 
 ## Agent Roster
 
-| Agent | Role | When Invoked |
-|---|---|---|
-| **Combined Planner** | PRD interview, architecture, task decomposition | Section 1 — once per project |
-| **Architect** | System design decisions, technical approach | Complex features needing design |
-| **Backend Developer** | API endpoints, database models, business logic | All backend tasks |
-| **Frontend Developer** | UI components, pages, client-side logic | All frontend tasks |
-| **QA Engineer** | Test writing, bug detection, acceptance validation | After every dev task |
-| **Security Officer** | OWASP audit, vulnerability assessment | After QA passes |
-| **Codebase Analyzer** | Scans existing code, derives planning docs | Existing projects |
+| Agent                  | Role                                               | When Invoked                    |
+| ---------------------- | -------------------------------------------------- | ------------------------------- |
+| **Combined Planner**   | PRD interview, architecture, task decomposition    | Section 1 — once per project    |
+| **Architect**          | System design decisions, technical approach        | Complex features needing design |
+| **Backend Developer**  | API endpoints, database models, business logic     | All backend tasks               |
+| **Frontend Developer** | UI components, pages, client-side logic            | All frontend tasks              |
+| **QA Engineer**        | Test writing, bug detection, acceptance validation | After every dev task            |
+| **Security Officer**   | OWASP audit, vulnerability assessment              | After QA passes                 |
+| **Codebase Analyzer**  | Scans existing code, derives planning docs         | Existing projects               |
 
 ---
 
@@ -68,7 +64,7 @@ git clone https://github.com/rafaii/relay-harness
 cd relay-harness
 chmod +x install.sh
 ./install.sh
-````
+```
 
 The installer:
 
@@ -332,7 +328,3 @@ MIT — use it, fork it, build on it.
 ## Philosophy
 
 Most agent frameworks try to keep one giant AI session alive for the duration of a project. Relay does the opposite: **each agent is amnesia by design**. A fresh Claude process with a focused task and minimal context outperforms a bloated session every time. The baton passes. The baggage stays behind.
-
-```
-
-```

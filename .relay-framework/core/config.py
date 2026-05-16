@@ -37,6 +37,7 @@ DEFAULT_AGENT_MODELS = {
     # SECTION 2: Execution Agents
     'frontend_developer': 'us.anthropic.claude-sonnet-4-5-20250929-v1:0', # Frontend implementation (UI, components, styling)
     'backend_developer': 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',  # Backend implementation (API, database, business logic)
+    'database': 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',           # Database migrations and schema changes
     'qa': 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',                 # Testing and QA gate
     'security': 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',           # Security scanning and validation gate
 
@@ -74,6 +75,13 @@ DEFAULT_AGENT_NAMES = {
     'security_2': 'River',
     'security_3': 'Azure',
     'security_4': 'Storm',
+
+    # Database (0-4)
+    'database': 'Schema',
+    'database_1': 'Migrate',
+    'database_2': 'Query',
+    'database_3': 'Index',
+    'database_4': 'Optimize',
 
     # Coordinator
     'coordinator': 'Atlas',
