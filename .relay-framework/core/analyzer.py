@@ -76,7 +76,37 @@ High-signal source files (schemas, models, routes):
    - MUST include acceptance criteria
    - Frontend tasks MUST reference docs/ui_standards.md
    - Security tasks MUST reference docs/security_policy.md
-   - Follow the exact JSON format from Combined Planning Agent
+
+   **JSON Format (tasks_draft.json):**
+   ```json
+   {{
+     "project_name": "Detected from codebase",
+     "tasks": [
+       {{
+         "id": "SEC-001",
+         "title": "Short task title",
+         "description": "Detailed description (200+ chars) with acceptance criteria and doc references...",
+         "phase": "bug_fixes",
+         "role": "backend_developer",
+         "agent_type": "backend",
+         "dependencies": [],
+         "priority": 3,
+         "complexity": 2
+       }}
+     ]
+   }}
+   ```
+
+   **Required fields for each task:**
+   - id: Unique ID (e.g., SEC-001, REFACTOR-001, TEST-001)
+   - title: Short summary (under 80 chars)
+   - description: Comprehensive instructions (200+ chars) with acceptance criteria
+   - phase: "bug_fixes", "improvements", "refactoring", "testing", "documentation"
+   - role: "backend_developer", "frontend_developer", "qa", "security", "database", "devops"
+   - agent_type: "backend", "frontend", "qa", "security", "database", "devops"
+   - dependencies: Array of task IDs this depends on (or empty array)
+   - priority: 1-5 (1=highest)
+   - complexity: 1-5 (1=simple, 5=complex)
 
 4. Write docs/codex.md — the Living Codex documenting ONLY what exists NOW:
 
@@ -471,8 +501,14 @@ def _run_approval_flow(project_dir: Path) -> bool:
 
     # Show summary of tasks
     for task in tasks_data.get('tasks', []):
-        print(f"  [{task['id']}] {task['title']}")
-        print(f"      Phase: {task['phase']} | Role: {task['role']} | Complexity: {task.get('complexity', '?')}")
+        task_id = task.get('id', '???')
+        title = task.get('title', 'Untitled')
+        phase = task.get('phase', 'unspecified')
+        role = task.get('role', 'unspecified')
+        complexity = task.get('complexity', '?')
+
+        print(f"  [{task_id}] {title}")
+        print(f"      Phase: {phase} | Role: {role} | Complexity: {complexity}")
         print()
 
     if validation_warnings:
