@@ -234,6 +234,13 @@ def run_codebase_analysis(project_dir: Path) -> bool:
         _, stderr = process.communicate(timeout=1800)  # 30-minute timeout
         returncode = process.returncode
 
+        # Reset terminal to sane mode (Claude CLI leaves it in raw mode)
+        # This fixes the issue where input() doesn't accept Enter after Claude exits
+        try:
+            subprocess.run(["stty", "sane"], stdin=subprocess.DEVNULL, capture_output=True)
+        except Exception as e:
+            logger.warning(f"Could not reset terminal with 'stty sane': {e}")
+
         if returncode != 0:
             error_output = stderr.decode()[:2000] if stderr else "No error output"
             logger.error(f"Analyzer failed with exit code {returncode}")
