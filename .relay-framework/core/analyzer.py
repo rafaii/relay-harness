@@ -179,46 +179,74 @@ def run_codebase_analysis(project_dir: Path) -> bool:
     (project_dir / ".relay").mkdir(exist_ok=True)
 
     # === CHECKPOINT CHECK ===
-    # Check if analysis already completed (all 6 documents exist and are valid)
-    required_docs = [
+    # Check if analysis already completed (5 permanent docs exist and are valid)
+    # Note: tasks_draft.json gets renamed to tasks.json after approval, so we don't check for it
+    permanent_docs = [
         project_dir / "docs/system_design.md",
         project_dir / "docs/security_policy.md",
         project_dir / "docs/ui_standards.md",
         project_dir / "docs/master_plan.md",
         project_dir / "docs/codex.md",
-        project_dir / ".relay/tasks_draft.json"
     ]
 
     MIN_SIZE_BYTES = 800  # ~200 words minimum
 
-    all_docs_exist = all(doc.exists() and doc.stat().st_size >= MIN_SIZE_BYTES for doc in required_docs)
+    all_docs_exist = all(doc.exists() and doc.stat().st_size >= MIN_SIZE_BYTES for doc in permanent_docs)
 
-    if all_docs_exist:
-        print("✅ Analysis already complete! All 6 documents exist.\n")
+    # Check if tasks already exist (either draft or approved)
+    tasks_draft_exists = (project_dir / ".relay/tasks_draft.json").exists()
+    tasks_approved_exists = (project_dir / ".relay/tasks.json").exists()
+    tasks_db_exists = (project_dir / ".relay/tasks.db").exists()
+
+    if all_docs_exist and (tasks_draft_exists or tasks_approved_exists or tasks_db_exists):
+        print("✅ Analysis already complete! All 5 planning documents exist.\n")
         print("Documents found:")
-        for doc in required_docs:
+        for doc in permanent_docs:
             size = doc.stat().st_size
             print(f"  ✓ {doc.relative_to(project_dir)} ({size} bytes)")
+
+        # Check task status
+        if tasks_db_exists:
+            print("\n  ✓ tasks.db exists (tasks already approved and loaded)")
+        elif tasks_approved_exists:
+            print("\n  ✓ tasks.json exists (tasks approved but not loaded)")
+        elif tasks_draft_exists:
+            print("\n  ✓ tasks_draft.json exists (tasks awaiting approval)")
+
         print("\nOptions:")
-        print("  1. Review tasks - Show task approval prompt")
-        print("  2. Restart - Delete all docs and re-analyze")
+        print("  1. Review tasks - Show task approval prompt (if tasks_draft.json exists)")
+        print("  2. Restart - Delete all docs and re-analyze from scratch")
         print("  3. Exit - Keep existing docs")
         print()
 
         choice = input("Your choice (1/2/3): ").strip()
 
         if choice == "1":
-            # Skip to approval flow
-            print("\nProceeding to task approval...\n")
-            return _run_approval_flow(project_dir)
+            # Skip to approval flow (only if draft exists)
+            if tasks_draft_exists:
+                print("\nProceeding to task approval...\n")
+                return _run_approval_flow(project_dir)
+            else:
+                print("\nNo tasks_draft.json found. Tasks may have already been approved.")
+                print("Check .relay/tasks.json or .relay/tasks.db")
+                return False
         elif choice == "2":
             print("\nDeleting existing documents and restarting analysis...\n")
-            for doc in required_docs:
+            for doc in permanent_docs:
                 if doc.exists():
                     doc.unlink()
+            # Delete task files too
+            for task_file in [".relay/tasks_draft.json", ".relay/tasks.json", ".relay/tasks.db"]:
+                task_path = project_dir / task_file
+                if task_path.exists():
+                    task_path.unlink()
             # Continue to analysis below
         elif choice == "3":
-            print("\nKeeping existing documents. Run 'relay start' when ready.")
+            print("\nKeeping existing documents.")
+            if tasks_db_exists:
+                print("Run 'relay start' to begin execution.")
+            elif tasks_approved_exists or tasks_draft_exists:
+                print("Run 'relay analyze' again and choose option 1 to review/approve tasks.")
             return False
         else:
             print("Invalid choice. Exiting.")
