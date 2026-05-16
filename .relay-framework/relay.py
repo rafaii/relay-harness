@@ -26,50 +26,74 @@ if str(framework_dir) not in sys.path:
     sys.path.insert(0, str(framework_dir))
 
 
-def detect_project_state(project_dir: Path) -> str:
-    """Detect the current state of the project.
+def has_source_code(project_dir: Path) -> bool:
+    """Check if project directory contains actual source code (not just Relay artifacts)."""
+    CODE_DIRS = ['src', 'frontend', 'backend', 'client', 'server', 'api', 'web', 'app']
+    CODE_EXTENSIONS = ['*.py', '*.[jt]s', '*.tsx', '*.jsx']
 
-    Simplified for combined planning agent:
-    - SECTION 1 runs in ONE session (interview + design + security + UI standards + planning)
-    - SECTION 2 runs execution loop
+    for d in CODE_DIRS:
+        code_path = project_dir / d
+        if not code_path.exists():
+            continue
+        for ext in CODE_EXTENSIONS:
+            if any(code_path.rglob(ext)):
+                return True
+    return False
+
+
+def detect_project_mode(project_dir: Path) -> str:
+    """Detect the current project mode for intelligent workflow routing.
+
+    Five-mode detection:
+    - 'new': Empty project → full interview (Section 1)
+    - 'existing': Has code but no Relay docs → run analyzer first
+    - 'resume': Relay docs + incomplete tasks → skip Section 1, resume execution
+    - 'add_feature': Relay docs + all tasks done → mini-interview for new feature
+    - 'completed': All tasks done, nothing pending
 
     Returns:
-        'new' - No project initialized (need combined planning)
-        'in_progress' - Tasks in execution (SECTION 2)
-        'completed' - All tasks done
+        str: One of 'new', 'existing', 'resume', 'add_feature', 'completed'
     """
-    system_design_file = project_dir / "docs" / "system_design.md"
-    security_policy_file = project_dir / "docs" / "security_policy.md"
-    ui_standards_file = project_dir / "docs" / "ui_standards.md"
-    master_plan_file = project_dir / "docs" / "master_plan.md"
-    tasks_db = project_dir / ".relay" / "tasks.db"
+    # Check for actual code (not Relay artifacts)
+    has_code = has_source_code(project_dir)
 
-    # SECTION 1: Check if all planning documents exist
-    if not all([
-        system_design_file.exists(),
-        security_policy_file.exists(),
-        ui_standards_file.exists(),
-        master_plan_file.exists(),
-        tasks_db.exists()
-    ]):
-        return "new"  # Need to run combined planning agent
+    # Check for Relay planning artifacts
+    relay_docs_exist = all([
+        (project_dir / "docs/system_design.md").exists(),
+        (project_dir / "docs/security_policy.md").exists(),
+        (project_dir / "docs/ui_standards.md").exists(),
+        (project_dir / "docs/master_plan.md").exists()
+    ])
 
-    # SECTION 2: Execution phase
-    # Check task execution status
-    try:
-        from core.database import TaskDatabase
-        db = TaskDatabase(project_dir)
-        stats = db.get_statistics()
+    tasks_db_exists = (project_dir / ".relay/tasks.db").exists()
 
-        if stats['total'] == 0:
-            return "new"  # DB exists but no tasks - need to re-run planner
+    # Decision matrix
+    if not has_code and not relay_docs_exist:
+        return "new"
+    elif has_code and not relay_docs_exist:
+        return "existing"
+    elif relay_docs_exist and tasks_db_exists:
+        # Check task completion status
+        try:
+            from core.database import TaskDatabase
+            db = TaskDatabase(project_dir)
+            stats = db.get_statistics()
 
-        if stats['completed'] == stats['total']:
-            return "completed"  # All done!
-
-        return "in_progress"  # Has incomplete tasks - resume execution
-    except Exception:
-        # If we can't read DB, need to run combined planner
+            if stats['total'] == 0:
+                return "new"  # DB corrupt, restart
+            elif stats['completed'] == stats['total']:
+                return "add_feature"
+            else:
+                return "resume"
+        except Exception:
+            # If DB read fails, check if we have docs
+            if relay_docs_exist:
+                return "resume"  # Try to resume
+            else:
+                return "new"
+    elif relay_docs_exist and not tasks_db_exists:
+        return "resume"  # Planning completed but DB missing
+    else:
         return "new"
 
 
@@ -127,14 +151,14 @@ Examples:
         print(f"Error: Directory does not exist: {project_dir}")
         sys.exit(1)
 
-    # Detect state
-    state = detect_project_state(project_dir)
+    # Detect project mode
+    mode = detect_project_mode(project_dir)
 
     print(f"\n{'='*60}")
     print(f"  Relay Framework")
     print(f"{'='*60}\n")
     print(f"Project: {project_dir}")
-    print(f"State: {state.upper().replace('_', ' ')}")
+    print(f"Mode: {mode.upper().replace('_', ' ')}")
     print()
 
     # Handle different commands
@@ -146,22 +170,34 @@ Examples:
         show_project_status(project_dir)
         return
 
-    # Main flow: start/resume (Simplified with combined planning)
-    if state == "new":
+    # Main flow: start/resume with 5-mode routing
+    if mode == "new":
         print("No existing project detected. Starting Combined Planning Agent (SECTION 1)...\n")
         success = run_combined_planning_mode(project_dir)
         if not success:
             sys.exit(1)
         print("\n✓ SECTION 1 Complete! Starting SECTION 2 (Execution)...\n")
-        # Re-detect state and proceed to execution
-        state = "in_progress"
-
-    # SECTION 2: Execution
-    if state == "in_progress":
-        print("Starting/resuming execution (SECTION 2)...\n")
+        # Proceed to execution
         asyncio.run(run_execution_mode(project_dir, args.max_agents))
 
-    elif state == "completed":
+    elif mode == "existing":
+        print("Existing codebase detected without Relay docs.")
+        print("Running analyzer to generate planning documents...\n")
+        # Will be implemented in Phase 1.3
+        print("⚠️  Analyzer not yet implemented. Please run 'relay analyze' manually.")
+        print("Or create a new project with 'relay init' in an empty directory.")
+
+    elif mode == "resume":
+        print("Resuming execution (SECTION 2)...\n")
+        asyncio.run(run_execution_mode(project_dir, args.max_agents))
+
+    elif mode == "add_feature":
+        print("All current tasks completed!")
+        print("\nTo add new features:")
+        print("  1. Run 'relay add \"<feature description>\"' (coming in Phase 2)")
+        print("  2. Or manually edit docs/master_plan.md and .relay/tasks.json")
+
+    elif mode == "completed":
         print("✓ All tasks completed!")
         print("\nRun 'relay status' to see final results.")
         print("Run 'relay ui' to launch Web UI.")

@@ -6,3 +6,6 @@ Backup/
 
 # Claude configuration
 .claude/
+
+# Local environment variables
+.env
