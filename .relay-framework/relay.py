@@ -115,7 +115,7 @@ Examples:
         'command',
         nargs='?',
         default='start',
-        choices=['start', 'resume', 'status', 'ui', 'init', 'analyze'],
+        choices=['start', 'resume', 'status', 'ui', 'init', 'analyze', 'request'],
         help='Command to execute'
     )
 
@@ -124,6 +124,12 @@ Examples:
         nargs='?',
         default='.',
         help='Project directory (default: current directory)'
+    )
+
+    parser.add_argument(
+        'description',
+        nargs='*',
+        help='Request description (for "request" command)'
     )
 
     parser.add_argument(
@@ -172,6 +178,16 @@ Examples:
 
     if args.command == 'analyze':
         run_project_analysis(project_dir)
+        return
+
+    if args.command == 'request':
+        if not args.description:
+            print("Error: 'request' command requires a description")
+            print("Usage: relay request \"Add user profile editing feature\"")
+            sys.exit(1)
+
+        request_text = ' '.join(args.description)
+        run_request_command(project_dir, request_text, args.max_agents)
         return
 
     # Main flow: start/resume with 5-mode routing
@@ -435,6 +451,20 @@ def run_project_analysis(project_dir: Path):
         print("  1. Fix issues and run 'relay analyze' again")
         print("  2. Manually create planning documents")
         print("  3. Or run 'relay init' in an empty directory for a new project")
+
+
+def run_request_command(project_dir: Path, request_text: str, max_agents: int):
+    """Handle relay request command."""
+    from core.request_agent import run_request_agent
+
+    success = run_request_agent(project_dir, request_text)
+
+    if success:
+        print("\nStarting execution of new tasks...\n")
+        asyncio.run(run_execution_mode(project_dir, max_agents))
+    else:
+        print("\nRequest cancelled or failed.")
+        print("Run 'relay status' to see current project state.")
 
 
 if __name__ == "__main__":

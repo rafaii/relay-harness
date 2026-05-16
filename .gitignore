@@ -3,6 +3,7 @@ Backup/
 
 # Root markdown files
 /*.md
+!README.md
 
 # Claude configuration
 .claude/
