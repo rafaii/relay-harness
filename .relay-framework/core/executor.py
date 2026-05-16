@@ -113,13 +113,16 @@ class Executor:
                     if completed:
                         await self._handle_completed_agents(completed)
 
-                    # 1.4. Check for tasks needing escalation
+                    # 1.4. Update Living Codex for completed tasks
+                    await self._update_codex_for_completed_tasks()
+
+                    # 1.5. Check for tasks needing escalation
                     self._check_escalations()
 
-                    # 1.5. Recover tasks with stale assignees
+                    # 1.6. Recover tasks with stale assignees
                     self._recover_stuck_assignees()
 
-                    # 1.6. Terminate slow-exit processes (released baton but still running >15s)
+                    # 1.7. Terminate slow-exit processes (released baton but still running >15s)
                     self._terminate_slow_exit_processes()
 
                     # 2. Process QA gate
@@ -266,6 +269,57 @@ class Executor:
                     f"agent {agent_id} completed but baton wasn't released"
                 )
                 self.db.update_task(task_id, {"assignee": None})
+
+    async def _update_codex_for_completed_tasks(self):
+        """
+        Update Living Codex for tasks that recently completed.
+
+        Tracks which tasks have been processed and updates codex for new completions.
+        """
+        try:
+            # Track processed tasks in executor state
+            if not hasattr(self, '_codex_processed_tasks'):
+                self._codex_processed_tasks = set()
+
+            # Get tasks that just completed (status = done, not yet processed)
+            session = self.db.get_session()
+            try:
+                from core.database import Task
+
+                completed_tasks = session.query(Task).filter(
+                    Task.status == "done"
+                ).all()
+
+                for task in completed_tasks:
+                    # Skip if already processed
+                    if task.id in self._codex_processed_tasks:
+                        continue
+
+                    # Update codex for this task
+                    logger.info(f"Updating Living Codex for completed task {task.id}")
+
+                    from core.codex_writer import update_codex
+
+                    task_data = {
+                        'title': task.title,
+                        'role': task.role,
+                        'description': task.description
+                    }
+
+                    success = await update_codex(self.project_dir, task.id, task_data)
+
+                    if success:
+                        # Mark as processed
+                        self._codex_processed_tasks.add(task.id)
+                        logger.info(f"✅ Codex updated for {task.id}")
+                    else:
+                        logger.warning(f"⚠️  Codex update failed for {task.id} (will retry next iteration)")
+
+            finally:
+                session.close()
+
+        except Exception as e:
+            logger.error(f"Failed to update codex for completed tasks: {e}")
 
     def _check_devops_trigger(self):
         """
@@ -1002,6 +1056,23 @@ References: docs/system_design.md, docs/security_policy.md
         Returns:
             Prompt string
         """
+        # Get Living Codex (what's already built)
+        from core.codex_writer import get_codex_content
+        codex_content = get_codex_content(self.project_dir)
+
+        codex_section = ""
+        if codex_content:
+            codex_section = f"""
+## 📖 What Is Already Built (Living Codex)
+
+{codex_content}
+
+**Note:** The codex above is the source of truth for what exists NOW.
+Use it to avoid duplicating functionality or conflicting with existing code.
+
+---
+"""
+
         # Extract relevant context from planning docs
         from core.context_extractor import extract_relevant_context
         relevant_context = extract_relevant_context(
@@ -1013,6 +1084,8 @@ References: docs/system_design.md, docs/security_policy.md
         return f"""# Task Assignment: {task.id}
 
 You are **{agent_name}** (Agent ID: `{agent_id}`) working on task **{task.id}** as a **{role}**.
+
+{codex_section}
 
 ## Instructions
 
