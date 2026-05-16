@@ -720,10 +720,13 @@ class Executor:
         Returns:
             Prompt string
         """
-        # Add UI standards reference for frontend tasks
-        ui_standards_note = ""
-        if role == "frontend_developer":
-            ui_standards_note = f"\n   - `docs/ui_standards.md` - Design system, colors, fonts, layouts, component guidelines (IMPORTANT for UI!)"
+        # Extract relevant context from planning docs
+        from core.context_extractor import extract_relevant_context
+        relevant_context = extract_relevant_context(
+            self.project_dir,
+            task.description or "",
+            role
+        )
 
         return f"""# Task Assignment: {task.id}
 
@@ -778,10 +781,17 @@ You are **{agent_name}** (Agent ID: `{agent_id}`) working on task **{task.id}** 
    - Query: SELECT * FROM task_logs WHERE task_id = "{task.id}" ORDER BY created_at ASC
    - This provides timestamps and structured status info
 
-4. **Read SECTION 1 documents for reference**:
-   - `docs/system_design.md` - Tech stack and architecture
-   - `docs/security_policy.md` - Security requirements (IMPORTANT!){ui_standards_note}
-   - `docs/master_plan.md` - Overall project plan
+4. **Read relevant planning context**:
+
+   The following sections from planning documents are relevant to your task:
+
+{relevant_context}
+
+   **Note:** If you need additional context not provided above, you can read the full files:
+   - `docs/system_design.md`
+   - `docs/security_policy.md`
+   - `docs/ui_standards.md`
+   - `docs/master_plan.md`
 
 5. **Complete the task**:
    - If status was "todo": Implement the feature from scratch
@@ -900,6 +910,14 @@ Without sys.exit(0), the process takes 30s-2min to shutdown, blocking other agen
         Returns:
             QA prompt string
         """
+        # Extract relevant context from planning docs
+        from core.context_extractor import extract_relevant_context
+        relevant_context = extract_relevant_context(
+            self.project_dir,
+            task.description or "",
+            task.role or "qa"
+        )
+
         return f"""# QA Review: {task.id}
 
 You are **{agent_name}** (Agent ID: `{agent_id}`) reviewing task **{task.id}** as a QA agent.
@@ -1102,6 +1120,14 @@ Without sys.exit(0), the process takes 30s-2min to shutdown, blocking other agen
         Returns:
             Security prompt string
         """
+        # Extract relevant context from security policy
+        from core.context_extractor import extract_relevant_context
+        relevant_context = extract_relevant_context(
+            self.project_dir,
+            task.description or "",
+            "security"
+        )
+
         return f"""# Security Review: {task.id}
 
 You are **{agent_name}** (Agent ID: `{agent_id}`) performing a security scan on task **{task.id}**.
@@ -1124,10 +1150,13 @@ You are **{agent_name}** (Agent ID: `{agent_id}`) performing a security scan on 
 2. **Also check database for task details**:
    - Connect to `.relay/tasks.db`
    - Query: SELECT * FROM tasks WHERE id = "{task.id}"
-   
-3. **Read Security Policy**:
-   - `docs/security_policy.md` - Required security standards
-   - Verify compliance with ALL requirements
+
+3. **Review relevant security policy sections**:
+
+{relevant_context}
+
+   **Note:** If you need additional security policy context, read the full file:
+   - `docs/security_policy.md`
 
 4. **Perform security scan**:
    - Check for OWASP Top 10 vulnerabilities
