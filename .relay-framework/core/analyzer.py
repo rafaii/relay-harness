@@ -114,8 +114,14 @@ def run_codebase_analysis(project_dir: Path) -> bool:
         key_source_files=key_source_files
     )
 
-    # 5. Spawn Claude CLI (Expert fix #6 - capture stderr)
-    model_id = get_model_id_for_agent('analyzer')
+    # 5. Load project config and get model for analyzer
+    try:
+        from .config import load_project_config
+        config = load_project_config(project_dir)
+        model_id = get_model_id_for_agent('analyzer', config)
+    except Exception as e:
+        logger.warning(f"Could not load project config, using default model: {e}")
+        model_id = get_model_id_for_agent('analyzer')
 
     try:
         process = subprocess.Popen(

@@ -306,6 +306,41 @@ def load_config(project_dir: Path) -> Dict[str, Any]:
     return config
 
 
+def load_project_config(project_dir: Path) -> Dict[str, Any]:
+    """
+    Load project configuration from either config.json or config.yaml.
+
+    Supports both JSON and YAML formats for flexibility.
+    JSON format is simpler for users, YAML format supports more complex structures.
+
+    Args:
+        project_dir: Project directory path
+
+    Returns:
+        Configuration dictionary with agent_models, default_model, etc.
+
+    Raises:
+        FileNotFoundError: If neither config file exists
+    """
+    relay_dir = project_dir / ".relay"
+
+    # Try JSON first (simpler format for users)
+    json_config = relay_dir / "config.json"
+    if json_config.exists():
+        with open(json_config, 'r') as f:
+            return json.load(f)
+
+    # Fall back to YAML
+    yaml_config = relay_dir / "config.yaml"
+    if yaml_config.exists():
+        with open(yaml_config, 'r') as f:
+            return yaml.safe_load(f)
+
+    raise FileNotFoundError(
+        f"No config file found. Expected {json_config} or {yaml_config}"
+    )
+
+
 def save_config(project_dir: Path, config: Dict[str, Any]) -> None:
     """
     Save configuration to .relay/config.yaml

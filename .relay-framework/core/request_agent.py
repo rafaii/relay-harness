@@ -17,7 +17,7 @@ import logging
 import json
 from pathlib import Path
 from datetime import datetime
-from .config import get_model_id_for_agent
+from .config import get_model_id_for_agent, load_project_config
 
 logger = logging.getLogger(__name__)
 
@@ -209,8 +209,13 @@ def run_request_agent(project_dir: Path, user_request: str) -> bool:
         timestamp=timestamp
     )
 
-    # Spawn Claude CLI
-    model_id = get_model_id_for_agent('request_agent')
+    # Spawn Claude CLI (load config if available)
+    try:
+        config = load_project_config(project_dir)
+        model_id = get_model_id_for_agent('request_agent', config)
+    except Exception as e:
+        logger.debug(f"Using default model (no config loaded): {e}")
+        model_id = get_model_id_for_agent('request_agent')
 
     try:
         print("Analyzing request and generating tasks...\n")

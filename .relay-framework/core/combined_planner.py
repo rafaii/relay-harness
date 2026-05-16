@@ -20,7 +20,7 @@ import logging
 import json
 from pathlib import Path
 from datetime import datetime
-from .config import get_model_id_for_agent
+from .config import get_model_id_for_agent, load_project_config
 from .database import TaskDatabase
 
 logger = logging.getLogger(__name__)
@@ -759,8 +759,14 @@ def run_combined_planning(project_dir: Path) -> bool:
         logger.warning(f"Could not check for existing planning state: {e}")
         # Continue anyway
 
-    # Get model ID for combined planner
-    model_id = get_model_id_for_agent('combined_planner')
+    # Get model ID for combined planner (load config if available)
+    try:
+        config = load_project_config(project_dir)
+        model_id = get_model_id_for_agent('combined_planner', config)
+    except Exception as e:
+        logger.debug(f"Using default model (no config loaded): {e}")
+        model_id = get_model_id_for_agent('combined_planner')
+
     logger.info(f"Launching Combined Planning agent (model: {model_id})...")
 
     try:
