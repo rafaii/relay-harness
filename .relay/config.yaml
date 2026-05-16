@@ -1,0 +1,183 @@
+# ============================================================================
+# Relay Framework Configuration Template
+# ============================================================================
+# This is the complete configuration structure that Relay uses.
+# All fields are shown with their defaults and descriptions.
+#
+# Quick start: Modify project.name and agents.models, leave the rest as-is.
+# ============================================================================
+
+# Project metadata
+project:
+  name: "My Project"              # Your project name
+  type: "web"                     # Project type: web, api, cli, library, mobile
+  created_at: "2026-05-16T00:00:00"  # Auto-generated timestamp
+
+# Project paths (auto-detected for existing projects, or set by combined_planner)
+paths:
+  frontend:
+    path: "./frontend"
+    framework: null               # e.g., "react", "vue", "nextjs" (auto-detected or set by planner)
+    package_manager: null         # "npm", "yarn", "pnpm" (auto-detected)
+    port: null                    # e.g., 3000 (auto-detected or set)
+    build_command: null           # e.g., "npm run build" (auto-detected)
+    dev_command: null             # e.g., "npm run dev" (auto-detected)
+
+  backend:
+    path: "./backend"
+    framework: null               # e.g., "express", "fastapi", "django" (auto-detected or set by planner)
+    package_manager: null         # "npm", "pip", "poetry" (auto-detected)
+    port: null                    # e.g., 8000 (auto-detected or set)
+    build_command: null           # e.g., "npm run build" (auto-detected)
+    dev_command: null             # e.g., "python main.py" (auto-detected)
+
+# Quality gates configuration
+gates:
+  qa_enabled: true                # Enable QA gate for all tasks
+  security_enabled: true          # Enable security gate for sensitive tasks
+
+# Agent configuration
+agents:
+  max_concurrent: 5               # Maximum number of parallel agents
+
+  # Model configuration for each agent type
+  # Options: "claude-opus-4", "claude-sonnet-4-5", "claude-haiku-4-5"
+  # Or full IDs: "us.anthropic.claude-sonnet-4-5-20250929-v1:0", "global.anthropic.claude-sonnet-4-5-20250929-v1:0"
+  models:
+    # Planning & Governance Agents
+    combined_planner: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"     # Combined planning (interview + design + tasks)
+    analyzer: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"             # Codebase analyzer for existing projects
+    request_agent: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"        # Feature/bug request handler
+    architect: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"            # System design and architecture
+    ui_designer: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"          # UI design, wireframes, component specs
+
+    # Execution Agents
+    frontend_developer: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"   # Frontend implementation
+    backend_developer: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"    # Backend implementation
+    database: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"             # Database migrations and schema changes
+    devops: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"               # DevOps, CI/CD, deployment
+    codex_writer: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"         # Living Codex updater (runs after each task)
+    qa: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"                   # Testing and QA gate
+    security: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"             # Security scanning and validation gate
+
+    # Legacy (backward compatibility)
+    interviewer: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"          # Replaced by combined_planner
+    planner: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"              # Replaced by combined_planner
+    security_architect: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"   # Replaced by combined_planner
+    ui_agent: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"             # Replaced by ui_designer
+    coordinator: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"          # Orchestration (rarely used)
+
+  # Agent names for identification (optional - uses defaults if not specified)
+  # These names appear in logs and UI for better readability
+  names:
+    # Frontend Developers (pool of 5)
+    frontend_developer: "Stacey"
+    frontend_developer_1: "Maya"
+    frontend_developer_2: "Jordan"
+    frontend_developer_3: "Casey"
+    frontend_developer_4: "Riley"
+
+    # Backend Developers (pool of 5)
+    backend_developer: "Alex"
+    backend_developer_1: "Sam"
+    backend_developer_2: "Taylor"
+    backend_developer_3: "Morgan"
+    backend_developer_4: "Cameron"
+
+    # QA Engineers (pool of 5)
+    qa: "Quinn"
+    qa_1: "Parker"
+    qa_2: "Avery"
+    qa_3: "Dakota"
+    qa_4: "Skyler"
+
+    # Security Engineers (pool of 5)
+    security: "Phoenix"
+    security_1: "Sage"
+    security_2: "River"
+    security_3: "Azure"
+    security_4: "Storm"
+
+    # Database Specialists (pool of 5)
+    database: "Schema"
+    database_1: "Migrate"
+    database_2: "Query"
+    database_3: "Index"
+    database_4: "Optimize"
+
+    # UI Designers (pool of 5)
+    ui_designer: "Pixel"
+    ui_designer_1: "Canvas"
+    ui_designer_2: "Sketch"
+    ui_designer_3: "Figma"
+    ui_designer_4: "Adobe"
+
+    # DevOps Engineers (pool of 5)
+    devops: "Docker"
+    devops_1: "Jenkins"
+    devops_2: "Kube"
+    devops_3: "Terraform"
+    devops_4: "Ansible"
+
+    # Other agents
+    analyzer: "Architect"
+    request_agent: "RequestHandler"
+    coordinator: "Atlas"
+    combined_planner: "Planner"
+    codex_writer: "Codex"
+
+# Task status workflow
+status_flow:
+  states:
+    - "todo"                      # Initial state for new tasks
+    - "in_development"            # Developer working on task
+    - "ready_for_qa"              # Dev complete, waiting for QA
+    - "in_qa"                     # QA testing in progress
+    - "qa_failed"                 # QA found issues (triggers re-queue or escalation)
+    - "ready_for_security"        # QA passed, waiting for security review
+    - "in_security"               # Security review in progress
+    - "security_failed"           # Security issues found (triggers re-queue or escalation)
+    - "done"                      # Task complete and verified
+
+# ============================================================================
+# ADVANCED SETTINGS (optional - framework uses sensible defaults)
+# ============================================================================
+
+# Execution settings
+execution:
+  task_timeout: 3600              # Task timeout in seconds (1 hour)
+  agent_startup_delay: 2          # Delay between agent spawns (seconds)
+  max_retries: 3                  # Max retries for failed tasks
+  enable_escalation: true         # Enable QA/security failure escalation
+  escalation_threshold: 3         # Failures before creating REVIEW task
+
+# Living Codex settings
+codex:
+  enabled: true                   # Enable Living Codex updates after each task
+  update_timeout: 300             # Codex update timeout (5 minutes)
+  min_update_size: 500            # Minimum codex size in bytes (validation)
+
+# DevOps auto-trigger settings
+devops:
+  auto_trigger: true              # Auto-create DevOps tasks when dev phases complete
+  required_phases:                # Phases that must complete before DevOps
+    - "architecture"
+    - "core_features"
+    - "additional_features"
+
+# Database migration auto-detection
+migrations:
+  auto_detect: true               # Auto-create migration tasks after backend changes
+  keywords:                       # Keywords that trigger migration detection
+    - "model"
+    - "schema"
+    - "table"
+    - "column"
+    - "field"
+    - "database"
+    - "migration"
+    - "index"
+    - "constraint"
+    - "foreign key"
+    - "relationship"
+    - "entity"

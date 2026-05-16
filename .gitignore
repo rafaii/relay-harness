@@ -10,9 +10,9 @@ CLAUDE.md
 # Claude configuration
 .claude/
 
-# Relay configuration - ignore everything except config.json
+# Relay configuration - ignore everything except config.yaml
 .relay/*
-!.relay/config.json
+!.relay/config.yaml
 
 # Local environment variables
 .env
