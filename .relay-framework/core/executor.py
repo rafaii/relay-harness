@@ -1043,9 +1043,12 @@ References: docs/system_design.md, docs/security_policy.md
 
     def _generate_developer_prompt(self, task: Task, role: str, agent_id: str, agent_name: str) -> str:
         """
-        Generate prompt for developer agent with task history awareness.
+        Generate prompt for developer agent using two-layer architecture.
 
-        Agent reads context from tasks.db and task_logs to understand previous work.
+        Layer 1: Static system prompt (~800 tokens, reused)
+        Layer 2: Dynamic task context (~600 tokens, per-task)
+
+        Total: ~1,400 tokens (down from ~9,000)
 
         Args:
             task: Task to generate prompt for
@@ -1056,24 +1059,27 @@ References: docs/system_design.md, docs/security_policy.md
         Returns:
             Prompt string
         """
-        # Get Living Codex (what's already built)
-        from core.codex_writer import get_codex_content
-        codex_content = get_codex_content(self.project_dir)
+        # === LAYER 1: Static System Prompt ===
+        from core.system_prompts import get_system_prompt
+        system_prompt = get_system_prompt(role, agent_name, agent_id)
+
+        # === LAYER 2: Dynamic Task Context ===
+
+        # 2a. Get filtered Codex (only sections relevant to this role)
+        from core.codex_filter import get_filtered_codex_for_role
+        filtered_codex = get_filtered_codex_for_role(self.project_dir, role)
 
         codex_section = ""
-        if codex_content:
+        if filtered_codex:
             codex_section = f"""
-## 📖 What Is Already Built (Living Codex)
+## 📖 What Is Already Built (Codex - {role} sections)
 
-{codex_content}
-
-**Note:** The codex above is the source of truth for what exists NOW.
-Use it to avoid duplicating functionality or conflicting with existing code.
+{filtered_codex}
 
 ---
 """
 
-        # Extract relevant context from planning docs
+        # 2b. Extract relevant context from planning docs
         from core.context_extractor import extract_relevant_context
         relevant_context = extract_relevant_context(
             self.project_dir,
@@ -1081,11 +1087,141 @@ Use it to avoid duplicating functionality or conflicting with existing code.
             role
         )
 
-        return f"""# Task Assignment: {task.id}
+        # 2c. Read task log if exists
+        task_log_path = self.project_dir / ".relay" / "logs" / f"{task.id}.md"
+        task_history = ""
+        if task_log_path.exists():
+            try:
+                history_content = task_log_path.read_text()
+                # Cap at 2000 chars to avoid bloat
+                if len(history_content) > 2000:
+                    history_content = history_content[:2000] + "\n\n[... truncated, read full file for complete history]"
+                task_history = f"""
+## 📜 Task History
 
-You are **{agent_name}** (Agent ID: `{agent_id}`) working on task **{task.id}** as a **{role}**.
+{history_content}
 
-{codex_section}
+**Note:** This task has prior work. Read carefully to avoid repeating mistakes.
+
+---
+"""
+            except Exception:
+                pass
+
+        # === COMBINE: System Prompt + Task Context ===
+        return f"""{system_prompt}
+
+---
+
+# TASK: {task.id}
+
+**Task Description** (from database `tasks.id='{task.id}'`):
+{task.description or '[Read from database]'}
+
+**Current Status**: `{task.status}`
+
+{task_history}{codex_section}
+
+## Relevant Planning Context
+
+{relevant_context}
+
+---
+
+**Note:** Read full files if needed: `docs/system_design.md`, `docs/security_policy.md`, `docs/ui_standards.md`
+"""
+
+    def _generate_qa_prompt(self, task: Task, agent_id: str, agent_name: str) -> str:
+        """
+        Generate QA prompt using two-layer architecture.
+
+        Args:
+            task: Task to generate QA prompt for
+            agent_id: Agent ID (e.g., "qa_1")
+            agent_name: Human-readable agent name (e.g., "Sarah")
+
+        Returns:
+            QA prompt string
+        """
+        # === LAYER 1: Static System Prompt ===
+        from core.system_prompts import get_system_prompt
+        system_prompt = get_system_prompt("qa", agent_name, agent_id)
+
+        # === LAYER 2: Dynamic Task Context ===
+
+        # 2a. Get filtered Codex (QA needs: API Endpoints, Frontend, Test Coverage)
+        from core.codex_filter import get_filtered_codex_for_role
+        filtered_codex = get_filtered_codex_for_role(self.project_dir, "qa")
+
+        codex_section = ""
+        if filtered_codex:
+            codex_section = f"""
+## 📖 What Exists (Codex - QA sections)
+
+{filtered_codex}
+
+---
+"""
+
+        # 2b. Read task log
+        task_log_path = self.project_dir / ".relay" / "logs" / f"{task.id}.md"
+        task_history = ""
+        if task_log_path.exists():
+            try:
+                history_content = task_log_path.read_text()
+                if len(history_content) > 2000:
+                    history_content = history_content[:2000] + "\n\n[... truncated]"
+                task_history = f"""
+## 📜 Task History
+
+{history_content}
+
+---
+"""
+            except Exception:
+                pass
+
+        # Extract relevant context from planning docs
+        from core.context_extractor import extract_relevant_context
+        relevant_context = extract_relevant_context(
+            self.project_dir,
+            task.description or "",
+            "qa"
+        )
+
+        return f"""{system_prompt}
+
+---
+
+# TASK: {task.id}
+
+**Task Description**:
+{task.description or '[Read from database]'}
+
+**Current Status**: `{task.status}`
+
+{task_history}{codex_section}
+
+## Relevant Planning Context
+
+{relevant_context}
+"""
+
+    def _generate_old_qa_prompt(self, task: Task, agent_id: str, agent_name: str) -> str:
+        """OLD QA PROMPT - KEPT FOR REFERENCE DURING MIGRATION."""
+        # Extract relevant context from planning docs
+        from core.context_extractor import extract_relevant_context
+        relevant_context = extract_relevant_context(
+            self.project_dir,
+            task.description or "",
+            "qa"
+        )
+
+        return f"""# QA Review: {task.id}
+
+You are **{agent_name}** (Agent ID: `{agent_id}`) reviewing task **{task.id}** as a QA agent.
+
+**NOTE**: This task has been assigned to you by the orchestrator. You have exclusive ownership.
 
 ## Instructions
 
