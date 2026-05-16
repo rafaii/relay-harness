@@ -214,6 +214,13 @@ async def update_codex(project_dir: Path, task_id: str, task_data: dict) -> bool
             return False
 
         logger.info(f"✅ Living Codex updated for task {task_id}")
+
+        # Regenerate role-specific summaries after Codex update
+        import asyncio
+        summary_success = asyncio.run(regenerate_summaries(project_dir))
+        if not summary_success:
+            logger.warning("Some Codex summaries failed to generate (non-blocking)")
+
         return True
 
     except subprocess.TimeoutExpired:
@@ -246,3 +253,299 @@ def get_codex_content(project_dir: Path) -> Optional[str]:
     except Exception as e:
         logger.error(f"Failed to read codex: {e}")
         return None
+
+
+# ============================================================================
+# CODEX SUMMARY GENERATION (Per-Role Summaries)
+# ============================================================================
+
+SUMMARY_PROMPTS = {
+    "frontend": """# Codex Summary Generator - Frontend
+
+Read docs/codex.md and create a concise summary for frontend developers.
+
+**Target: Under 400 tokens total**
+
+**Include:**
+1. Frontend tech stack (one line per tool/library)
+2. List of built shared components (name + path)
+3. Page count with note to read full codex for details
+4. API base URL pattern
+5. Known UI gaps from ui_standards.md section
+
+**Exclude:**
+- Backend internals, database schemas, env vars
+- Security implementation details
+- Integration specifics beyond what frontend uses
+- Exhaustive page lists (just counts and categories)
+
+**Format:**
+```markdown
+## Frontend Stack
+[One-line each: React version, build tool, router, state, data fetching, forms, styling, UI libs, testing]
+
+## Shared Components (Built)
+- ComponentName (path) - brief purpose
+[List only what EXISTS, not what's planned]
+
+## Pages (count)
+X pages across [categories]. Full list: read docs/codex.md#frontend-pages
+
+## API Base URL
+/api — see docs/codex.md#api-endpoints for full list
+
+## Known UI Gaps
+- [Brief bullet points from ui_standards.md]
+```
+
+Use Write tool to save to `.relay/codex_summary_frontend.md`
+""",
+
+    "backend": """# Codex Summary Generator - Backend
+
+Read docs/codex.md and create a concise summary for backend developers.
+
+**Target: Under 400 tokens total**
+
+**Include:**
+1. Backend tech stack (one line per tool)
+2. Database table names grouped by domain (NO column details)
+3. Existing endpoint count per category with note to read full codex
+4. Auth pattern summary (JWT type, expiry, bcrypt cost)
+
+**Exclude:**
+- Frontend pages, UI components
+- Full env var lists (just critical patterns)
+- Voice gateway implementation details
+- Column-by-column schema details
+
+**Format:**
+```markdown
+## Backend Stack
+[One-line each: framework, ORM, database, cache, queue, auth, logging, monitoring]
+
+## Database (X tables)
+Core: [table names]
+CRM: [table names]
+Agents: [table names]
+Full schemas: read docs/codex.md#database
+
+## API (existing endpoints — do not duplicate)
+Auth: X endpoints | Businesses: X | CRM: X | Inbox: X
+[More categories...]
+Full list: read docs/codex.md#api-endpoints
+
+## Auth Pattern
+JWT [type], [access expiry] / [refresh expiry], bcrypt cost [N]
+Guards: [list guard names]
+```
+
+Use Write tool to save to `.relay/codex_summary_backend.md`
+""",
+
+    "qa": """# Codex Summary Generator - QA
+
+Read docs/codex.md and create a concise summary for QA engineers.
+
+**Target: Under 300 tokens total**
+
+**Include:**
+1. Existing test files and test commands
+2. Known gaps (missing tests, coverage issues)
+3. API endpoint count per domain (for test coverage awareness)
+4. Critical user flows (if documented)
+
+**Exclude:**
+- Implementation details (tech stack internals)
+- Database schemas
+- Environment variables
+
+**Format:**
+```markdown
+## Test Coverage
+[List existing test files and commands]
+Coverage: [X%] or "Not tracked"
+
+## Known Gaps
+- [Missing test areas from codex]
+
+## API Endpoints (X total)
+[Category: count] — test coverage: [status]
+
+## Critical Flows
+[If documented, list main user journeys]
+```
+
+Use Write tool to save to `.relay/codex_summary_qa.md`
+""",
+
+    "security": """# Codex Summary Generator - Security
+
+Read docs/codex.md and create a concise summary for security auditors.
+
+**Target: Under 300 tokens total**
+
+**Include:**
+1. Auth mechanisms (JWT, OAuth, MFA)
+2. Encryption in use (what and where)
+3. Known security gaps from codex
+4. Webhook verification status per integration
+
+**Exclude:**
+- Frontend pages, UI components
+- General tech stack (unless security-relevant)
+- Business logic implementation details
+
+**Format:**
+```markdown
+## Auth Mechanisms
+JWT: [type, expiry]
+OAuth: [providers]
+MFA: [status, method]
+Password: [hash algo, cost]
+
+## Encryption
+- [What is encrypted and how]
+
+## Known Security Gaps
+- [List from docs/security_policy.md or codex]
+
+## Webhook Verification
+- WhatsApp: [enabled/disabled]
+- Facebook: [enabled/disabled]
+- Stripe: [enabled/disabled]
+[etc.]
+```
+
+Use Write tool to save to `.relay/codex_summary_security.md`
+""",
+
+    "database": """# Codex Summary Generator - Database
+
+Read docs/codex.md and create a concise summary for database specialists.
+
+**Target: Under 300 tokens total**
+
+**Include:**
+1. Database tech (PostgreSQL version, connection pooling)
+2. Table list with domain grouping (NO column details)
+3. Migration framework in use
+4. Backup/replication status
+
+**Format:**
+```markdown
+## Database
+PostgreSQL [version]
+ORM: [name + version]
+Migration tool: [tool name]
+
+## Tables ([count] total)
+Core: [names]
+CRM: [names]
+Agents: [names]
+Full schemas: read docs/codex.md#database
+
+## Known Issues
+- [Any DB-related gaps from codex]
+```
+
+Use Write tool to save to `.relay/codex_summary_database.md`
+""",
+
+    "devops": """# Codex Summary Generator - DevOps
+
+Read docs/codex.md and create a concise summary for DevOps engineers.
+
+**Target: Under 300 tokens total**
+
+**Include:**
+1. Infrastructure components (Docker, NGINX, VPS details)
+2. Services and ports
+3. Environment variable patterns (not full list)
+4. Deployment/CI status
+
+**Format:**
+```markdown
+## Infrastructure
+[List containers, proxy, hosting]
+
+## Services & Ports
+Backend: [port]
+Frontend: [port]
+Voice Gateway: [port]
+
+## Environment Variables
+[Groups: Database, Redis, Auth, Integrations, etc.]
+Full list: read docs/codex.md#environment-variables
+
+## Deployment
+[Docker Compose version, CI/CD status, SSL status]
+```
+
+Use Write tool to save to `.relay/codex_summary_devops.md`
+"""
+}
+
+
+async def regenerate_summaries(project_dir: Path) -> bool:
+    """
+    Regenerate role-specific Codex summaries after Codex update.
+
+    Called automatically after update_codex() succeeds.
+
+    Args:
+        project_dir: Project directory
+
+    Returns:
+        True if all summaries generated successfully
+    """
+    from .config import get_model_id_for_agent, load_project_config
+
+    # Get model for codex writer
+    try:
+        config = load_project_config(project_dir)
+        model_id = get_model_id_for_agent('codex_writer', config)
+    except Exception:
+        model_id = 'us.anthropic.claude-sonnet-4-5-20250929-v1:0'
+
+    logger.info("Regenerating Codex summaries for all roles...")
+
+    success_count = 0
+    for role, prompt in SUMMARY_PROMPTS.items():
+        try:
+            logger.info(f"Generating Codex summary for {role}...")
+
+            process = subprocess.Popen(
+                [
+                    "claude",
+                    "--model", model_id,
+                    "--dangerously-skip-permissions",
+                    prompt
+                ],
+                cwd=str(project_dir),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                stdin=subprocess.DEVNULL
+            )
+
+            stdout, stderr = process.communicate(timeout=120)  # 2 min per summary
+
+            if process.returncode == 0:
+                # Verify summary was created
+                summary_path = project_dir / ".relay" / f"codex_summary_{role}.md"
+                if summary_path.exists() and summary_path.stat().st_size > 100:
+                    logger.info(f"✓ Generated codex_summary_{role}.md")
+                    success_count += 1
+                else:
+                    logger.warning(f"✗ Summary for {role} not created or too small")
+            else:
+                error_output = stderr.decode()[:500] if stderr else "No error"
+                logger.warning(f"✗ Summary generation failed for {role}: {error_output}")
+
+        except subprocess.TimeoutExpired:
+            logger.warning(f"✗ Summary generation timed out for {role}")
+        except Exception as e:
+            logger.warning(f"✗ Failed to generate summary for {role}: {e}")
+
+    logger.info(f"Codex summary generation complete: {success_count}/{len(SUMMARY_PROMPTS)} succeeded")
+    return success_count == len(SUMMARY_PROMPTS)

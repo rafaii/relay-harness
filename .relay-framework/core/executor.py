@@ -1065,19 +1065,25 @@ References: docs/system_design.md, docs/security_policy.md
 
         # === LAYER 2: Dynamic Task Context ===
 
-        # 2a. Get filtered Codex (only sections relevant to this role)
-        from core.codex_filter import get_filtered_codex_for_role
-        filtered_codex = get_filtered_codex_for_role(self.project_dir, role)
+        # 2a. Get Codex summary (role-specific, ~400 tokens)
+        agent_type = task.agent_type or role.replace('_developer', '')
+        summary_path = self.project_dir / ".relay" / f"codex_summary_{agent_type}.md"
 
         codex_section = ""
-        if filtered_codex:
-            codex_section = f"""
-## 📖 What Is Already Built (Codex - {role} sections)
+        if summary_path.exists():
+            try:
+                codex_summary = summary_path.read_text()
+                codex_section = f"""
+## 📖 What Is Already Built (Codex Summary)
 
-{filtered_codex}
+{codex_summary}
+
+**Note:** This is a summary. For full details, read `docs/codex.md` directly.
 
 ---
 """
+            except Exception:
+                pass
 
         # 2b. Extract relevant context from planning docs
         from core.context_extractor import extract_relevant_context
@@ -1109,18 +1115,25 @@ References: docs/system_design.md, docs/security_policy.md
                 pass
 
         # === COMBINE: System Prompt + Task Context ===
+
+        # Avoid duplicating task description if it's in the history
+        task_desc_section = ""
+        if not task_history:
+            # First run - no history yet, show description
+            task_desc_section = f"""
+**Task Description**:
+{task.description or '[Read from database]'}
+
+**Current Status**: `{task.status}`
+"""
+
         return f"""{system_prompt}
 
 ---
 
 # TASK: {task.id}
 
-**Task Description** (from database `tasks.id='{task.id}'`):
-{task.description or '[Read from database]'}
-
-**Current Status**: `{task.status}`
-
-{task_history}{codex_section}
+{task_desc_section}{task_history}{codex_section}
 
 ## Relevant Planning Context
 
@@ -1149,19 +1162,22 @@ References: docs/system_design.md, docs/security_policy.md
 
         # === LAYER 2: Dynamic Task Context ===
 
-        # 2a. Get filtered Codex (QA needs: API Endpoints, Frontend, Test Coverage)
-        from core.codex_filter import get_filtered_codex_for_role
-        filtered_codex = get_filtered_codex_for_role(self.project_dir, "qa")
+        # 2a. Get Codex summary (QA-specific, ~300 tokens)
+        summary_path = self.project_dir / ".relay" / "codex_summary_qa.md"
 
         codex_section = ""
-        if filtered_codex:
-            codex_section = f"""
-## 📖 What Exists (Codex - QA sections)
+        if summary_path.exists():
+            try:
+                codex_summary = summary_path.read_text()
+                codex_section = f"""
+## 📖 What Exists (Codex Summary)
 
-{filtered_codex}
+{codex_summary}
 
 ---
 """
+            except Exception:
+                pass
 
         # 2b. Read task log
         task_log_path = self.project_dir / ".relay" / "logs" / f"{task.id}.md"
