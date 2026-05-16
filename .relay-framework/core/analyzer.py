@@ -146,6 +146,52 @@ def run_codebase_analysis(project_dir: Path) -> bool:
     (project_dir / "docs").mkdir(exist_ok=True)
     (project_dir / ".relay").mkdir(exist_ok=True)
 
+    # === CHECKPOINT CHECK ===
+    # Check if analysis already completed (all 6 documents exist and are valid)
+    required_docs = [
+        project_dir / "docs/system_design.md",
+        project_dir / "docs/security_policy.md",
+        project_dir / "docs/ui_standards.md",
+        project_dir / "docs/master_plan.md",
+        project_dir / "docs/codex.md",
+        project_dir / ".relay/tasks_draft.json"
+    ]
+
+    MIN_SIZE_BYTES = 800  # ~200 words minimum
+
+    all_docs_exist = all(doc.exists() and doc.stat().st_size >= MIN_SIZE_BYTES for doc in required_docs)
+
+    if all_docs_exist:
+        print("✅ Analysis already complete! All 6 documents exist.\n")
+        print("Documents found:")
+        for doc in required_docs:
+            size = doc.stat().st_size
+            print(f"  ✓ {doc.relative_to(project_dir)} ({size} bytes)")
+        print("\nOptions:")
+        print("  1. Review tasks - Show task approval prompt")
+        print("  2. Restart - Delete all docs and re-analyze")
+        print("  3. Exit - Keep existing docs")
+        print()
+
+        choice = input("Your choice (1/2/3): ").strip()
+
+        if choice == "1":
+            # Skip to approval flow
+            print("\nProceeding to task approval...\n")
+            return _run_approval_flow(project_dir)
+        elif choice == "2":
+            print("\nDeleting existing documents and restarting analysis...\n")
+            for doc in required_docs:
+                if doc.exists():
+                    doc.unlink()
+            # Continue to analysis below
+        elif choice == "3":
+            print("\nKeeping existing documents. Run 'relay start' when ready.")
+            return False
+        else:
+            print("Invalid choice. Exiting.")
+            return False
+
     # 1. Build filtered file tree (Expert fix #1)
     file_tree = _build_file_tree(project_dir)
 
@@ -219,73 +265,7 @@ def run_codebase_analysis(project_dir: Path) -> bool:
         logger.info("✅ Codebase analysis complete!")
 
         # === USER APPROVAL PHASE (Expert fix #4) ===
-        print("\n" + "="*80)
-        print("📋 PROPOSED TASKS - REVIEW REQUIRED")
-        print("="*80)
-
-        # Load and display draft tasks
-        draft_file = project_dir / ".relay/tasks_draft.json"
-        with open(draft_file, 'r') as f:
-            tasks_data = json.load(f)
-
-        # Validate task quality
-        validation_warnings = _validate_task_quality(tasks_data.get('tasks', []))
-
-        print(f"\nThe analyzer identified {len(tasks_data.get('tasks', []))} tasks:\n")
-
-        # Show summary of tasks
-        for task in tasks_data.get('tasks', []):
-            print(f"  [{task['id']}] {task['title']}")
-            print(f"      Phase: {task['phase']} | Role: {task['role']} | Complexity: {task.get('complexity', '?')}")
-            print()
-
-        if validation_warnings:
-            print("\n⚠️  Task quality warnings:")
-            for warning in validation_warnings[:5]:  # Show first 5
-                print(f"  - {warning}")
-            if len(validation_warnings) > 5:
-                print(f"  ... and {len(validation_warnings) - 5} more")
-            print()
-
-        print("\nOptions:")
-        print("  1. Approve - Create tasks.db and proceed to execution")
-        print("  2. Edit - Open tasks_draft.json in editor for manual changes")
-        print("  3. Cancel - Keep docs but don't create tasks (manual setup)")
-        print()
-
-        while True:
-            choice = input("Your choice (1/2/3): ").strip()
-
-            if choice == "1":
-                # Create tasks.db from approved draft
-                logger.info("Creating tasks database from approved tasks...")
-                success = _populate_tasks_database_from_draft(project_dir)
-                if success:
-                    # Rename draft to tasks.json for record-keeping
-                    (project_dir / ".relay/tasks_draft.json").rename(
-                        project_dir / ".relay/tasks.json"
-                    )
-                    print("\n✅ Tasks database created!")
-                    print("\nNext: Run 'relay start' to begin execution")
-                    return True
-                else:
-                    logger.error("Failed to create tasks database")
-                    return False
-
-            elif choice == "2":
-                # Open in editor
-                print("\nOpening tasks_draft.json in editor...")
-                print("Edit the tasks, save, and run 'relay analyze' again to review.")
-                subprocess.run(["open", str(draft_file)])  # macOS
-                return False  # User needs to re-run after editing
-
-            elif choice == "3":
-                print("\nDocs created but no tasks database.")
-                print("You can manually create .relay/tasks.json and run 'relay start'")
-                return False
-
-            else:
-                print("Invalid choice. Please enter 1, 2, or 3.")
+        return _run_approval_flow(project_dir)
 
     except subprocess.TimeoutExpired:
         logger.error("Analyzer timed out (30-minute limit)")
@@ -447,3 +427,91 @@ def _validate_task_quality(tasks: list) -> list:
             warnings.append(f"{task_id}: No acceptance criteria")
 
     return warnings
+
+
+def _run_approval_flow(project_dir: Path) -> bool:
+    """
+    Run the approval flow for tasks_draft.json.
+
+    This is extracted as a separate function so it can be called both:
+    1. After analyzer completes (normal flow)
+    2. When user runs 'relay analyze' again and docs already exist (checkpoint resume)
+
+    Args:
+        project_dir: Project directory
+
+    Returns:
+        True if tasks approved and database created, False otherwise
+    """
+    print("\n" + "="*80)
+    print("📋 PROPOSED TASKS - REVIEW REQUIRED")
+    print("="*80)
+
+    # Load and display draft tasks
+    draft_file = project_dir / ".relay/tasks_draft.json"
+
+    if not draft_file.exists():
+        logger.error("tasks_draft.json not found. Run 'relay analyze' first.")
+        return False
+
+    with open(draft_file, 'r') as f:
+        tasks_data = json.load(f)
+
+    # Validate task quality
+    validation_warnings = _validate_task_quality(tasks_data.get('tasks', []))
+
+    print(f"\nThe analyzer identified {len(tasks_data.get('tasks', []))} tasks:\n")
+
+    # Show summary of tasks
+    for task in tasks_data.get('tasks', []):
+        print(f"  [{task['id']}] {task['title']}")
+        print(f"      Phase: {task['phase']} | Role: {task['role']} | Complexity: {task.get('complexity', '?')}")
+        print()
+
+    if validation_warnings:
+        print("\n⚠️  Task quality warnings:")
+        for warning in validation_warnings[:5]:  # Show first 5
+            print(f"  - {warning}")
+        if len(validation_warnings) > 5:
+            print(f"  ... and {len(validation_warnings) - 5} more")
+        print()
+
+    print("\nOptions:")
+    print("  1. Approve - Create tasks.db and proceed to execution")
+    print("  2. Edit - Open tasks_draft.json in editor for manual changes")
+    print("  3. Cancel - Keep docs but don't create tasks (manual setup)")
+    print()
+
+    while True:
+        choice = input("Your choice (1/2/3): ").strip()
+
+        if choice == "1":
+            # Create tasks.db from approved draft
+            logger.info("Creating tasks database from approved tasks...")
+            success = _populate_tasks_database_from_draft(project_dir)
+            if success:
+                # Rename draft to tasks.json for record-keeping
+                (project_dir / ".relay/tasks_draft.json").rename(
+                    project_dir / ".relay/tasks.json"
+                )
+                print("\n✅ Tasks database created!")
+                print("\nNext: Run 'relay start' to begin execution")
+                return True
+            else:
+                logger.error("Failed to create tasks database")
+                return False
+
+        elif choice == "2":
+            # Open in editor
+            print("\nOpening tasks_draft.json in editor...")
+            print("Edit the tasks, save, and run 'relay analyze' again to review.")
+            subprocess.run(["open", str(draft_file)])  # macOS
+            return False  # User needs to re-run after editing
+
+        elif choice == "3":
+            print("\nDocs created but no tasks database.")
+            print("You can manually create .relay/tasks.json and run 'relay start'")
+            return False
+
+        else:
+            print("Invalid choice. Please enter 1, 2, or 3.")
