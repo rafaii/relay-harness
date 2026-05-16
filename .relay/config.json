@@ -1,0 +1,14 @@
+{
+  "project_name": "My Project",
+  "max_agents": 5,
+  "default_model": "claude-sonnet-4-5",
+  "agent_models": {
+    "planner": "claude-sonnet-4-5",
+    "architect": "claude-sonnet-4-5",
+    "backend": "claude-sonnet-4-5",
+    "frontend": "claude-sonnet-4-5",
+    "qa": "claude-haiku-4-5",
+    "security": "claude-sonnet-4-5",
+    "analyzer": "claude-sonnet-4-5"
+  }
+}

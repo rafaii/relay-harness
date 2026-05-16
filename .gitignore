@@ -1,12 +1,18 @@
-# Backup folder
-Backup/
+# Excluded folders
+src/
+docs/
 
 # Root markdown files
 /*.md
+CLAUDE.md
 !README.md
 
 # Claude configuration
 .claude/
+
+# Relay configuration - ignore everything except config.json
+.relay/*
+!.relay/config.json
 
 # Local environment variables
 .env
