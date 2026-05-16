@@ -1,0 +1,8 @@
+# Backup folder
+Backup/
+
+# Root markdown files
+/*.md
+
+# Claude configuration
+.claude/

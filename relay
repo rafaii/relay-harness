@@ -1,0 +1,41 @@
+#!/bin/bash
+# Relay Framework Entry Point (Unix/Mac/Linux)
+
+# Get the directory where this script is actually located (resolve symlinks)
+# First resolve the symlink to get the real script path, then get its directory
+if [ -L "${BASH_SOURCE[0]}" ]; then
+    # Script is a symlink, resolve it
+    REAL_SCRIPT="$(readlink "${BASH_SOURCE[0]}")"
+    # If readlink returns a relative path, make it absolute
+    if [[ "$REAL_SCRIPT" != /* ]]; then
+        REAL_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && cd "$(dirname "$REAL_SCRIPT")" && pwd)/$(basename "$REAL_SCRIPT")"
+    fi
+    SCRIPT_DIR="$(cd "$(dirname "$REAL_SCRIPT")" && pwd)"
+else
+    # Script is not a symlink
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+fi
+
+FRAMEWORK_DIR="$SCRIPT_DIR/.relay-framework"
+
+# Project directory is where the user runs relay from (current working directory)
+PROJECT_DIR="$(pwd)"
+RELAY_DIR="$PROJECT_DIR/.relay"
+
+# Check if venv exists, create if not
+if [ ! -d "$RELAY_DIR/venv" ]; then
+    echo "Virtual environment not found. Creating venv..."
+    mkdir -p "$RELAY_DIR"
+    python3 -m venv "$RELAY_DIR/venv"
+    echo "Installing dependencies..."
+    "$RELAY_DIR/venv/bin/pip" install --upgrade pip > /dev/null 2>&1
+    "$RELAY_DIR/venv/bin/pip" install -r "$FRAMEWORK_DIR/requirements.txt" > /dev/null 2>&1
+    "$RELAY_DIR/venv/bin/playwright" install chromium > /dev/null 2>&1
+    echo "Setup complete!"
+fi
+
+# Use venv Python
+PYTHON_BIN="$RELAY_DIR/venv/bin/python3"
+
+# Execute Python entry point with venv Python
+"$PYTHON_BIN" "$FRAMEWORK_DIR/relay.py" "$@"

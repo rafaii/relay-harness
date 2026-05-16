@@ -1,0 +1,18 @@
+# Relay Framework Dependencies
+# ============================
+
+# Database
+sqlalchemy>=2.0.0
+
+# Configuration
+pyyaml>=6.0
+
+# Web Server
+fastapi>=0.100.0
+uvicorn>=0.23.0
+
+# Browser Automation (for testing/UI agents)
+playwright>=1.40.0
+
+# Utilities
+python-dateutil>=2.8.2
