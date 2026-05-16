@@ -29,11 +29,12 @@ You are analyzing an existing codebase to generate Relay Framework planning docu
 Your task:
 1. Examine the codebase structure, files, and patterns
 2. Infer the architecture, tech stack, and design decisions
-3. Generate the same 5 documents that the Combined Planning Agent creates:
+3. Generate 6 documents total:
    - docs/system_design.md (architecture, database schema, API specs)
    - docs/security_policy.md (current security measures + recommendations)
    - docs/ui_standards.md (existing UI patterns + standardization)
    - docs/master_plan.md (refactoring/improvement roadmap)
+   - docs/codex.md (Living Codex - what EXISTS right now)
    - .relay/tasks_draft.json (proposed improvement tasks - REQUIRES USER APPROVAL)
 
 **Context:**
@@ -77,9 +78,47 @@ High-signal source files (schemas, models, routes):
    - Security tasks MUST reference docs/security_policy.md
    - Follow the exact JSON format from Combined Planning Agent
 
-4. Use Write tool to create all 5 documents
+4. Write docs/codex.md — the Living Codex documenting ONLY what exists NOW:
 
-5. Be honest about unknowns (e.g., "Database schema not found in codebase")
+   **CRITICAL RULES FOR CODEX:**
+   - **Present tense only** - "The API has", "Users can", "The database contains"
+   - **Facts only** - What exists NOW (not plans, not TODOs, not future intent)
+   - **Derived from actual code** - Build it from what you found in the codebase:
+     * Tech stack (from package.json, requirements.txt, Dockerfile)
+     * Database tables and columns (from models, migrations, schema files)
+     * API endpoints that exist (from route files - method, path, purpose)
+     * Frontend pages and shared components (from component/page files)
+     * Third-party integrations wired up (from config, .env.example, imports)
+     * Security measures in place (from auth middleware, validation)
+     * Environment variables required (from .env.example, config files)
+     * Test coverage if test files exist
+
+   - **Use standard sections:**
+     ## Tech Stack
+     ## Database
+     ### Tables
+     ### Migrations
+     ## API Endpoints
+     ## Frontend
+     ### Pages
+     ### Shared Components
+     ## Integrations
+     ## Security
+     ## Environment Variables Required
+     ## Test Coverage
+
+   - **Be honest about partial implementations:**
+     Good: "Stripe integration: client initialized, payment intent endpoint exists, webhooks not yet handled"
+     Bad: "Stripe integration: complete" (when it's not)
+
+   - **No task IDs, no phase names, no "TODO" or "will"**
+
+   This is the source of truth for what is built. After this initial snapshot,
+   it will be updated automatically after each completed task.
+
+5. Use Write tool to create all 6 documents
+
+6. Be honest about unknowns (e.g., "Database schema not found in codebase")
 
 **IMPORTANT:** The tasks_draft.json file will be shown to the user for approval before creating the tasks database. Make tasks realistic and actionable based on what you found in the codebase.
 """
@@ -152,6 +191,7 @@ def run_codebase_analysis(project_dir: Path) -> bool:
             project_dir / "docs/security_policy.md",
             project_dir / "docs/ui_standards.md",
             project_dir / "docs/master_plan.md",
+            project_dir / "docs/codex.md",  # Living Codex - initial snapshot from actual code
             project_dir / ".relay/tasks_draft.json"  # Draft tasks for approval
         ]
 
