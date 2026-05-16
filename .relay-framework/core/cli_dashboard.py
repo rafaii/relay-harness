@@ -360,7 +360,8 @@ class CLIDashboard:
         if waiting_tasks:
             print(f"\n📋 Next Ready Tasks ({len(waiting_tasks)} available):")
             for i, (task_id, title, role) in enumerate(waiting_tasks[:5], 1):
-                print(f"   {i}. [{role:>20}] {task_id}: {title[:40]}")
+                role_display = role if role else "unspecified"
+                print(f"   {i}. [{role_display:>20}] {task_id}: {title[:40]}")
 
         # Time information with ETA
         if elapsed_time is not None:

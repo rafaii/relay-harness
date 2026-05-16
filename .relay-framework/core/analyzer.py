@@ -339,14 +339,53 @@ def _populate_tasks_database_from_draft(project_dir: Path) -> bool:
         }
 
         for task_data in tasks_data.get('tasks', []):
-            # Ensure agent_type is set
+            # Ensure role and agent_type are set
+            if 'role' not in task_data or not task_data['role']:
+                # Infer role from task ID prefix or default to backend
+                task_id = task_data.get('id', '')
+                if task_id.startswith('FE-') or task_id.startswith('UI-'):
+                    task_data['role'] = 'frontend_developer'
+                elif task_id.startswith('QA-') or task_id.startswith('TEST-'):
+                    task_data['role'] = 'qa'
+                elif task_id.startswith('SEC-'):
+                    task_data['role'] = 'security'
+                elif task_id.startswith('DB-') or task_id.startswith('MIG-'):
+                    task_data['role'] = 'database'
+                elif task_id.startswith('DEVOPS-') or task_id.startswith('INFRA-'):
+                    task_data['role'] = 'devops'
+                else:
+                    task_data['role'] = 'backend_developer'
+
             if 'agent_type' not in task_data:
                 if 'frontend' in task_data.get('role', '').lower():
                     task_data['agent_type'] = 'frontend'
+                elif 'qa' in task_data.get('role', '').lower():
+                    task_data['agent_type'] = 'qa'
+                elif 'security' in task_data.get('role', '').lower():
+                    task_data['agent_type'] = 'security'
+                elif 'database' in task_data.get('role', '').lower():
+                    task_data['agent_type'] = 'database'
+                elif 'devops' in task_data.get('role', '').lower():
+                    task_data['agent_type'] = 'devops'
                 else:
                     task_data['agent_type'] = 'backend'
 
             task_data['status'] = 'todo'
+
+            # Ensure phase is set
+            if 'phase' not in task_data or not task_data['phase']:
+                # Infer phase from task ID or default to improvements
+                task_id = task_data.get('id', '')
+                if task_id.startswith('SEC-'):
+                    task_data['phase'] = 'bug_fixes'
+                elif task_id.startswith('TEST-') or task_id.startswith('QA-'):
+                    task_data['phase'] = 'testing'
+                elif task_id.startswith('REFACTOR-'):
+                    task_data['phase'] = 'refactoring'
+                elif task_id.startswith('DOC-'):
+                    task_data['phase'] = 'documentation'
+                else:
+                    task_data['phase'] = 'improvements'
 
             # Ensure dependencies is a list (not null or missing)
             if 'dependencies' not in task_data or task_data['dependencies'] is None:
