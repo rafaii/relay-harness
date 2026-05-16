@@ -39,6 +39,7 @@ DEFAULT_AGENT_MODELS = {
     'frontend_developer': 'us.anthropic.claude-sonnet-4-5-20250929-v1:0', # Frontend implementation (UI, components, styling)
     'backend_developer': 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',  # Backend implementation (API, database, business logic)
     'database': 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',           # Database migrations and schema changes
+    'devops': 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',             # DevOps, CI/CD, deployment, infrastructure
     'qa': 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',                 # Testing and QA gate
     'security': 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',           # Security scanning and validation gate
 
@@ -90,6 +91,13 @@ DEFAULT_AGENT_NAMES = {
     'ui_designer_2': 'Sketch',
     'ui_designer_3': 'Figma',
     'ui_designer_4': 'Adobe',
+
+    # DevOps (0-4)
+    'devops': 'Docker',
+    'devops_1': 'Jenkins',
+    'devops_2': 'Kube',
+    'devops_3': 'Terraform',
+    'devops_4': 'Ansible',
 
     # Coordinator
     'coordinator': 'Atlas',

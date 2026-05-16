@@ -128,6 +128,9 @@ class Executor:
                     # 3. Process Security gate
                     await self._process_security_gate()
 
+                    # 3.5. Check if DevOps phase should be triggered
+                    self._check_devops_trigger()
+
                     # 4. Check if all tasks are completed
                     if self._all_tasks_complete():
                         logger.info("All tasks completed!")
@@ -178,7 +181,7 @@ class Executor:
             # Determine agent role from agent_id
             agent_role = None
             if ('frontend_developer' in agent_id or 'backend_developer' in agent_id or
-                'database' in agent_id or 'ui_designer' in agent_id):
+                'database' in agent_id or 'ui_designer' in agent_id or 'devops' in agent_id):
                 agent_role = 'developer'
             elif 'qa' in agent_id:
                 agent_role = 'qa'
@@ -263,6 +266,228 @@ class Executor:
                     f"agent {agent_id} completed but baton wasn't released"
                 )
                 self.db.update_task(task_id, {"assignee": None})
+
+    def _check_devops_trigger(self):
+        """
+        Check if DevOps phase should be triggered.
+
+        When all development tasks (architecture, core_features, additional_features)
+        are complete, automatically create DevOps tasks for deployment setup.
+        """
+        try:
+            # Check if DevOps tasks already exist
+            session = self.db.get_session()
+            try:
+                from core.database import Task
+
+                existing_devops = session.query(Task).filter(
+                    Task.phase == "devops"
+                ).first()
+
+                if existing_devops:
+                    # DevOps phase already created
+                    return
+
+                # Check if development phases are complete
+                dev_phases = ["architecture", "core_features", "additional_features"]
+                all_dev_complete = True
+
+                for phase in dev_phases:
+                    phase_tasks = session.query(Task).filter(
+                        Task.phase == phase
+                    ).all()
+
+                    if not phase_tasks:
+                        # Phase doesn't exist, skip
+                        continue
+
+                    # Check if all tasks in phase are done
+                    incomplete = [t for t in phase_tasks if t.status != "done"]
+                    if incomplete:
+                        all_dev_complete = False
+                        break
+
+                if not all_dev_complete:
+                    # Development not complete yet
+                    return
+
+                # All development complete - create DevOps tasks
+                logger.info("Development phases complete! Creating DevOps phase...")
+
+                devops_tasks = [
+                    {
+                        "id": "DEVOPS-001",
+                        "title": "Create Dockerfile for application",
+                        "description": """Create Docker containerization setup for the application.
+
+**Requirements:**
+1. Review project structure and tech stack from docs/system_design.md
+2. Create Dockerfile(s):
+   - Frontend: If separate frontend app, create frontend/Dockerfile
+   - Backend: Create backend/Dockerfile or root Dockerfile
+   - Multi-stage builds for optimization
+
+3. Dockerfile must include:
+   - Appropriate base image (node:18-alpine, python:3.11-slim, etc.)
+   - Dependency installation
+   - Build steps
+   - Production optimizations (layer caching, minimal image size)
+   - Non-root user for security
+   - Health check endpoint
+
+4. Create .dockerignore to exclude:
+   - node_modules, .git, .env, logs, temp files
+   - Development-only files
+
+5. Create docker-compose.yml for local development:
+   - Application service(s)
+   - Database service (if needed)
+   - Volume mounts for development
+   - Environment variables
+   - Network configuration
+
+6. Test locally:
+   - Build images successfully
+   - Run containers
+   - Verify application works
+   - Check image size (optimize if >500MB)
+
+**Acceptance Criteria:**
+- Dockerfile builds without errors
+- Application runs in container
+- docker-compose up starts all services
+- Documentation in README for Docker usage
+
+References: docs/system_design.md
+""",
+                        "phase": "devops",
+                        "role": "devops_developer",
+                        "agent_type": "devops",
+                        "dependencies": [],
+                        "priority": 0,
+                        "complexity": 3,
+                        "status": "todo"
+                    },
+                    {
+                        "id": "DEVOPS-002",
+                        "title": "Setup CI/CD pipeline",
+                        "description": """Create continuous integration and deployment pipeline.
+
+**Requirements:**
+1. Choose CI/CD platform:
+   - GitHub Actions (if on GitHub)
+   - GitLab CI (if on GitLab)
+   - CircleCI, Travis, Jenkins (alternatives)
+
+2. Create workflow files:
+   - `.github/workflows/ci.yml` (for GitHub Actions)
+   - Or equivalent for chosen platform
+
+3. CI pipeline must include:
+   - Checkout code
+   - Install dependencies
+   - Run linters/formatters
+   - Run tests
+   - Build application
+   - Security scanning (npm audit, Snyk, etc.)
+
+4. CD pipeline (optional, for staging):
+   - Deploy to staging environment
+   - Run smoke tests
+   - Notify on deployment
+
+5. Pipeline triggers:
+   - On pull request: Run CI only
+   - On push to main: Run CI + CD
+   - Manual trigger option
+
+6. Test the pipeline:
+   - Create test PR
+   - Verify all checks pass
+   - Fix any failures
+
+**Acceptance Criteria:**
+- CI pipeline runs on every PR
+- All checks (lint, test, build) must pass
+- Clear status badges in README
+- Documentation for running locally
+
+References: docs/system_design.md
+""",
+                        "phase": "devops",
+                        "role": "devops_developer",
+                        "agent_type": "devops",
+                        "dependencies": ["DEVOPS-001"],
+                        "priority": 0,
+                        "complexity": 3,
+                        "status": "todo"
+                    },
+                    {
+                        "id": "DEVOPS-003",
+                        "title": "Create environment configuration files",
+                        "description": """Setup environment configuration for different deployment environments.
+
+**Requirements:**
+1. Create environment templates:
+   - `.env.example` - Template with all required vars
+   - `.env.development` - Local development defaults
+   - `.env.production.template` - Production template
+
+2. Document all environment variables in README:
+   - Variable name
+   - Purpose
+   - Default value (if any)
+   - Required vs optional
+   - Example values
+
+3. Setup environment loading:
+   - Use dotenv or equivalent
+   - Validate required env vars on startup
+   - Provide clear error messages for missing vars
+
+4. Security considerations:
+   - Never commit actual .env files
+   - Add .env to .gitignore
+   - Use secrets management for production (AWS Secrets Manager, etc.)
+   - Document secret rotation process
+
+5. Environment-specific configs:
+   - Database URLs
+   - API keys (examples only)
+   - Feature flags
+   - Logging levels
+   - CORS settings
+   - Port numbers
+
+**Acceptance Criteria:**
+- .env.example complete with all variables
+- Clear documentation in README
+- Application fails fast with clear errors if env vars missing
+- No secrets committed to git
+
+References: docs/system_design.md, docs/security_policy.md
+""",
+                        "phase": "devops",
+                        "role": "devops_developer",
+                        "agent_type": "devops",
+                        "dependencies": [],
+                        "priority": 0,
+                        "complexity": 2,
+                        "status": "todo"
+                    }
+                ]
+
+                for task_data in devops_tasks:
+                    self.db.create_task(task_data)
+                    logger.info(f"Created DevOps task: {task_data['id']}")
+
+                logger.info(f"✅ Created {len(devops_tasks)} DevOps tasks")
+
+            finally:
+                session.close()
+
+        except Exception as e:
+            logger.error(f"Failed to check DevOps trigger: {e}")
 
     def _check_escalations(self):
         """
@@ -676,7 +901,7 @@ class Executor:
                     role = task.role
 
                 # Validate role
-                valid_roles = ["frontend_developer", "backend_developer", "database_developer", "ui_designer"]
+                valid_roles = ["frontend_developer", "backend_developer", "database_developer", "ui_designer", "devops_developer"]
                 if role not in valid_roles:
                     logger.warning(f"Task {task.id} has invalid role: {role}. Defaulting to backend_developer")
                     role = "backend_developer"
@@ -697,6 +922,8 @@ class Executor:
                     prompt = self._generate_database_prompt(task, available_agent_id, agent_name)
                 elif role == "ui_designer":
                     prompt = self._generate_ui_designer_prompt(task, available_agent_id, agent_name)
+                elif role == "devops_developer":
+                    prompt = self._generate_devops_prompt(task, available_agent_id, agent_name)
                 else:
                     prompt = self._generate_developer_prompt(task, role, available_agent_id, agent_name)
 
@@ -1391,6 +1618,140 @@ sys.exit(0)
 - tasks table: Task data and status
 - `.relay/logs/{task.id}.md`: Design history
 - Design files in `docs/wireframes/` and `docs/components/`
+"""
+
+    def _generate_devops_prompt(self, task: Task, agent_id: str, agent_name: str) -> str:
+        """
+        Generate prompt for DevOps agent.
+
+        Args:
+            task: Task to generate prompt for
+            agent_id: Agent ID (e.g., "devops_1")
+            agent_name: Human-readable agent name (e.g., "Docker")
+
+        Returns:
+            DevOps prompt string
+        """
+        # Extract relevant context from system design
+        from core.context_extractor import extract_relevant_context
+        relevant_context = extract_relevant_context(
+            self.project_dir,
+            task.description or "",
+            "devops"
+        )
+
+        return f"""# DevOps Task: {task.id}
+
+You are **{agent_name}** (Agent ID: `{agent_id}`) working on DevOps task **{task.id}**.
+
+## Instructions
+
+1. **Read task details from database**:
+   - Connect to `.relay/tasks.db`
+   - Query: SELECT * FROM tasks WHERE id = "{task.id}"
+   - The description field contains infrastructure/deployment requirements
+
+2. **Review relevant system design sections**:
+
+{relevant_context}
+
+   **Note:** Read full `docs/system_design.md` for complete tech stack and architecture context.
+
+3. **Complete the DevOps task**:
+
+   Your work depends on the task type:
+
+   **For Dockerfile creation:**
+   - Review project structure and dependencies
+   - Create optimized multi-stage Dockerfile
+   - Use appropriate base images (alpine/slim variants)
+   - Implement security best practices (non-root user, minimal layers)
+   - Create .dockerignore
+   - Create docker-compose.yml for local development
+   - Test build and run locally
+
+   **For CI/CD setup:**
+   - Choose appropriate platform (GitHub Actions recommended)
+   - Create workflow files (.github/workflows/)
+   - Implement: lint → test → build → (optional) deploy
+   - Add status badges to README
+   - Test pipeline with dummy commit
+
+   **For environment configuration:**
+   - Create .env.example with all variables
+   - Document each variable in README
+   - Setup environment loading in application
+   - Validate required variables on startup
+   - Never commit secrets
+
+   **For deployment configuration:**
+   - Choose deployment platform (Vercel, Netlify, AWS, etc.)
+   - Create deployment configuration files
+   - Setup environment variables
+   - Document deployment process
+   - Test deployment to staging
+
+4. **Follow DevOps best practices**:
+   - Infrastructure as Code (IaC)
+   - Security-first approach
+   - Minimal attack surface
+   - Clear documentation
+   - Repeatable deployments
+   - Health checks and monitoring
+
+5. **Document your work**:
+   - Create/update `.relay/logs/{task.id}.md`:
+     ```markdown
+     ### ✅ DevOps Task Complete
+     **Time:** [current timestamp YYYY-MM-DD HH:MM:SS]
+     **Agent:** {agent_name} ({agent_id})
+     **Status:** Ready for QA
+
+     **Work Summary:**
+     - [What you created/configured]
+     - [Key decisions made]
+     - [Files created/modified]
+
+     **Files Created/Modified:**
+     - `Dockerfile`
+     - `.github/workflows/ci.yml`
+     - `.env.example`
+     - etc.
+
+     **Testing:**
+     - [How you tested the setup]
+     - [Results]
+
+     **Deployment Notes:**
+     - [Important considerations for production]
+     - [Environment variables needed]
+     - [Manual steps required]
+     ```
+
+6. **Update task status**:
+   - If task completed successfully:
+     * UPDATE tasks SET status='ready_for_qa', assignee=NULL WHERE id='{task.id}'
+   - If unable to complete:
+     * UPDATE tasks SET status='failed', assignee=NULL WHERE id='{task.id}'
+     * Document why in the task log
+
+7. **EXIT immediately** after updating status:
+```python
+import sys
+sys.exit(0)
+```
+
+**DevOps Checklist:**
+- [ ] Configuration follows security best practices
+- [ ] Documentation complete (README updated)
+- [ ] Tested locally
+- [ ] No secrets committed
+- [ ] Clear deployment instructions
+- [ ] Health checks included (if applicable)
+
+**SINGLE source of truth:**
+- tasks table: Task data and status
+- `.relay/logs/{task.id}.md`: DevOps work history
 """
 
     def _generate_database_prompt(self, task: Task, agent_id: str, agent_name: str) -> str:
