@@ -120,7 +120,16 @@ High-signal source files (schemas, models, routes):
 
 6. Be honest about unknowns (e.g., "Database schema not found in codebase")
 
-**IMPORTANT:** The tasks_draft.json file will be shown to the user for approval before creating the tasks database. Make tasks realistic and actionable based on what you found in the codebase.
+**IMPORTANT:**
+- The tasks_draft.json file will be shown to the user for approval before creating the tasks database
+- Make tasks realistic and actionable based on what you found in the codebase
+- After writing all 6 documents, your job is COMPLETE - exit immediately
+- DO NOT wait for user input or approval - that happens after you exit
+
+**COMPLETION CHECKLIST:**
+Once you have written all 6 files, respond with:
+"✅ Analysis complete. All 6 documents written. Exiting."
+Then stop immediately.
 """
 
 
