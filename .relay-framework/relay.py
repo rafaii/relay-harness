@@ -115,7 +115,7 @@ Examples:
         'command',
         nargs='?',
         default='start',
-        choices=['start', 'resume', 'status', 'ui', 'init'],
+        choices=['start', 'resume', 'status', 'ui', 'init', 'analyze'],
         help='Command to execute'
     )
 
@@ -170,6 +170,10 @@ Examples:
         show_project_status(project_dir)
         return
 
+    if args.command == 'analyze':
+        run_project_analysis(project_dir)
+        return
+
     # Main flow: start/resume with 5-mode routing
     if mode == "new":
         print("No existing project detected. Starting Combined Planning Agent (SECTION 1)...\n")
@@ -183,9 +187,7 @@ Examples:
     elif mode == "existing":
         print("Existing codebase detected without Relay docs.")
         print("Running analyzer to generate planning documents...\n")
-        # Will be implemented in Phase 1.3
-        print("⚠️  Analyzer not yet implemented. Please run 'relay analyze' manually.")
-        print("Or create a new project with 'relay init' in an empty directory.")
+        run_project_analysis(project_dir)
 
     elif mode == "resume":
         print("Resuming execution (SECTION 2)...\n")
@@ -411,6 +413,28 @@ def _get_or_create_project_name(project_dir: Path) -> str:
         return base_name
 
     return project_name
+
+
+def run_project_analysis(project_dir: Path):
+    """Analyze existing codebase and generate documentation."""
+    from core.analyzer import run_codebase_analysis
+
+    success = run_codebase_analysis(project_dir)
+
+    if success:
+        print("\n✓ Analysis complete! Generated:")
+        print("  - docs/system_design.md")
+        print("  - docs/security_policy.md")
+        print("  - docs/ui_standards.md")
+        print("  - docs/master_plan.md")
+        print("  - tasks.db with approved tasks")
+        print("\nNext: Run 'relay start' to begin execution")
+    else:
+        print("\n✗ Analysis failed. Check logs for details.")
+        print("You can:")
+        print("  1. Fix issues and run 'relay analyze' again")
+        print("  2. Manually create planning documents")
+        print("  3. Or run 'relay init' in an empty directory for a new project")
 
 
 if __name__ == "__main__":

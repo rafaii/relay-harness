@@ -26,6 +26,7 @@ DEFAULT_MODEL = 'us.anthropic.claude-sonnet-4-5-20250929-v1:0'
 DEFAULT_AGENT_MODELS = {
     # SECTION 1: Planning & Governance Agents
     'combined_planner': 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',   # Combined planning agent (interview + design + planning)
+    'analyzer': 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',           # Codebase analyzer for existing projects
     'interviewer': 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',        # Legacy: Interview agent (kept for backward compatibility)
     'architect': 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',          # Legacy: System design and architecture
     'security_architect': 'us.anthropic.claude-sonnet-4-5-20250929-v1:0', # Legacy: Security policy creation
@@ -74,7 +75,10 @@ DEFAULT_AGENT_NAMES = {
     'security_4': 'Storm',
 
     # Coordinator
-    'coordinator': 'Atlas'
+    'coordinator': 'Atlas',
+
+    # Analyzer
+    'analyzer': 'Architect'
 }
 
 
