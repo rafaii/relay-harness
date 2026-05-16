@@ -113,6 +113,9 @@ class Executor:
                     if completed:
                         await self._handle_completed_agents(completed)
 
+                    # 1.4. Check for tasks needing escalation
+                    self._check_escalations()
+
                     # 1.5. Recover tasks with stale assignees
                     self._recover_stuck_assignees()
 
@@ -259,6 +262,46 @@ class Executor:
                     f"agent {agent_id} completed but baton wasn't released"
                 )
                 self.db.update_task(task_id, {"assignee": None})
+
+    def _check_escalations(self):
+        """
+        Check for tasks that need escalation after repeated failures.
+
+        If a task has failed QA or Security multiple times, escalate to
+        manual review.
+        """
+        try:
+            from core.escalation import TaskEscalation
+
+            escalation = TaskEscalation(self.project_dir)
+
+            # Get tasks that have failed QA or Security
+            session = self.db.get_session()
+            try:
+                from core.database import Task
+
+                failed_tasks = session.query(Task).filter(
+                    Task.status.in_(["qa_failed", "security_failed"])
+                ).all()
+
+                for task in failed_tasks:
+                    # Check failure count
+                    failure_info = escalation.check_failure_count(task.id, self.db)
+
+                    if failure_info["should_escalate"]:
+                        logger.warning(
+                            f"Task {task.id} has failed {failure_info['total_failures']} times - escalating"
+                        )
+                        review_task_id = escalation.escalate_task(task.id, failure_info, self.db)
+
+                        if review_task_id:
+                            logger.info(f"Created review task: {review_task_id}")
+
+            finally:
+                session.close()
+
+        except Exception as e:
+            logger.error(f"Failed to check escalations: {e}")
 
     def _recover_stuck_assignees(self):
         """
