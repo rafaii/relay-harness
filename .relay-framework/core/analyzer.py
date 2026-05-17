@@ -29,13 +29,37 @@ You are analyzing an existing codebase to generate Relay Framework planning docu
 Your task:
 1. Examine the codebase structure, files, and patterns
 2. Infer the architecture, tech stack, and design decisions
-3. Generate 6 documents total:
-   - docs/system_design.md (architecture, database schema, API specs)
-   - docs/security_policy.md (current security measures + recommendations)
-   - docs/ui_standards.md (existing UI patterns + standardization)
-   - docs/master_plan.md (refactoring/improvement roadmap)
-   - docs/codex.md (Living Codex - what EXISTS right now)
-   - .relay/tasks_draft.json (proposed improvement tasks - REQUIRES USER APPROVAL)
+3. Generate vault structure with domain-specific documentation
+
+**Documents to Create:**
+
+**Section 1 Planning Docs (docs/):**
+- docs/system_design.md (overall architecture, from Section 1)
+- docs/security_policy.md (security standards, from Section 1)
+- docs/ui_standards.md (design system, from Section 1)
+- docs/master_plan.md (refactoring/improvement roadmap - FUTURE PLANS)
+
+**Vault Documentation (.relay/vault/):**
+- .relay/vault/INDEX.md (main index)
+- .relay/vault/CHANGELOG.md (initially empty)
+- .relay/vault/architecture/index.md
+- .relay/vault/architecture/tech-stack.md (what IS installed/configured)
+- .relay/vault/architecture/database-schema.md (tables that EXIST)
+- .relay/vault/backend/index.md
+- .relay/vault/backend/api-endpoints.md (endpoints that WORK)
+- .relay/vault/backend/services.md (services that EXIST)
+- .relay/vault/frontend/index.md
+- .relay/vault/frontend/pages.md (pages that ARE deployed)
+- .relay/vault/frontend/components.md (components that ARE built)
+- .relay/vault/integrations/index.md
+- .relay/vault/integrations/integrations.md (integrations that WORK)
+- .relay/vault/security/index.md
+- .relay/vault/security/authentication.md (auth that EXISTS)
+- .relay/vault/decisions/index.md
+- .relay/vault/decisions/adr-template.md
+
+**Tasks:**
+- .relay/tasks_draft.json (proposed improvement tasks - REQUIRES USER APPROVAL)
 
 **Context:**
 
@@ -48,6 +72,20 @@ Key configuration files:
 High-signal source files (schemas, models, routes):
 {key_source_files}
 
+**CRITICAL VAULT RULES:**
+
+1. **Vault = CURRENT STATE only** (what IS built, not what WILL be built)
+   - Use present tense: "The API has", "Users can", "The database contains"
+   - Facts only: Document what EXISTS in the codebase RIGHT NOW
+   - NO future plans: "will", "todo", "planned" are FORBIDDEN in vault files
+
+2. **Future plans go in docs/master_plan.md** (NOT in vault)
+   - Vault = implementation reality
+   - Master plan = improvement roadmap
+
+3. **Exception:** decisions/ can have "Proposed" ADRs (discussing what to build)
+   - All other vault folders = facts about what exists
+
 **Instructions:**
 
 1. Read key files to understand:
@@ -57,10 +95,15 @@ High-signal source files (schemas, models, routes):
    - UI components (component structure, styling)
    - Security implementations (auth, validation)
 
-2. Generate each document with:
+2. For Section 1 docs (system_design, security_policy, ui_standards):
    - What EXISTS (current state)
    - What's MISSING (gaps to fill)
    - Recommendations (improvements)
+
+3. For Vault files (architecture, backend, frontend, etc.):
+   - **ONLY what EXISTS** (present tense, facts)
+   - Document the ACTUAL implementation
+   - If something doesn't exist, don't document it in vault
 
 3. Generate tasks_draft.json with improvement/refactoring tasks:
    - Fix security vulnerabilities found
@@ -110,57 +153,77 @@ High-signal source files (schemas, models, routes):
 
    **IMPORTANT:** Only include these 9 fields. Do NOT add extra fields like "references", "notes", "tags", etc.
 
-4. Write docs/codex.md — the Living Codex documenting ONLY what exists NOW:
+4. Write vault files documenting what EXISTS NOW:
 
-   **CRITICAL RULES FOR CODEX:**
+   **CRITICAL VAULT RULES:**
    - **Present tense only** - "The API has", "Users can", "The database contains"
    - **Facts only** - What exists NOW (not plans, not TODOs, not future intent)
-   - **Derived from actual code** - Build it from what you found in the codebase:
-     * Tech stack (from package.json, requirements.txt, Dockerfile)
-     * Database tables and columns (from models, migrations, schema files)
-     * API endpoints that exist (from route files - method, path, purpose)
-     * Frontend pages and shared components (from component/page files)
-     * Third-party integrations wired up (from config, .env.example, imports)
-     * Security measures in place (from auth middleware, validation)
-     * Environment variables required (from .env.example, config files)
-     * Test coverage if test files exist
+   - **Each vault file = one domain** - Split by domain, not one big file
 
-   - **Use standard sections:**
-     ## Tech Stack
-     ## Database
-     ### Tables
-     ### Migrations
-     ## API Endpoints
-     ## Frontend
-     ### Pages
-     ### Shared Components
-     ## Integrations
-     ## Security
-     ## Environment Variables Required
-     ## Test Coverage
+   **Vault files to create:**
 
-   - **Be honest about partial implementations:**
-     Good: "Stripe integration: client initialized, payment intent endpoint exists, webhooks not yet handled"
-     Bad: "Stripe integration: complete" (when it's not)
+   a) `.relay/vault/INDEX.md` - Main navigation (use template from migrate_to_vault.py)
 
-   - **No task IDs, no phase names, no "TODO" or "will"**
+   b) `.relay/vault/CHANGELOG.md` - Initial entry noting vault creation
+
+   c) `.relay/vault/architecture/tech-stack.md`:
+      - Languages, frameworks, libraries INSTALLED
+      - Build tools configured
+      - Runtime environments
+
+   d) `.relay/vault/architecture/database-schema.md`:
+      - Tables that EXIST (from models/migrations)
+      - Columns and types
+      - Relationships
+      - Indexes
+
+   e) `.relay/vault/backend/api-endpoints.md`:
+      - API endpoints that WORK (from route files)
+      - Method, path, purpose
+      - Request/response formats
+
+   f) `.relay/vault/backend/services.md`:
+      - Business logic services that EXIST
+      - Key functions/methods
+
+   g) `.relay/vault/frontend/pages.md`:
+      - Pages that ARE deployed
+      - Route, purpose, features
+
+   h) `.relay/vault/frontend/components.md`:
+      - Shared components that ARE built
+      - Props, usage
+
+   i) `.relay/vault/integrations/integrations.md`:
+      - Third-party integrations that WORK
+      - Auth method, key API calls
+
+   j) `.relay/vault/security/authentication.md`:
+      - Auth mechanisms in place
+      - Session management
+
+   k) Create empty index.md for each domain folder
+
+   **Be honest about partial implementations:**
+   Good: "Stripe integration: client initialized, payment intent endpoint exists, webhooks not yet handled"
+   Bad: "Stripe integration: complete" (when it's not)
 
    This is the source of truth for what is built. After this initial snapshot,
    it will be updated automatically after each completed task.
 
-5. Use Write tool to create all 6 documents
+5. Use Write tool to create all docs + vault files
 
 6. Be honest about unknowns (e.g., "Database schema not found in codebase")
 
 **IMPORTANT:**
 - The tasks_draft.json file will be shown to the user for approval before creating the tasks database
 - Make tasks realistic and actionable based on what you found in the codebase
-- After writing all 6 documents, your job is COMPLETE - exit immediately
+- After writing all documents + vault files, your job is COMPLETE - exit immediately
 - DO NOT wait for user input or approval - that happens after you exit
 
 **COMPLETION CHECKLIST:**
-Once you have written all 6 files, respond with:
-"✅ Analysis complete. All 6 documents written. Exiting."
+Once you have written Section 1 docs (4 files) + vault structure (11+ files) + tasks_draft.json, respond with:
+"✅ Analysis complete. Section 1 docs + vault structure written. Exiting."
 Then stop immediately.
 """
 
@@ -179,14 +242,18 @@ def run_codebase_analysis(project_dir: Path) -> bool:
     (project_dir / ".relay").mkdir(exist_ok=True)
 
     # === CHECKPOINT CHECK ===
-    # Check if analysis already completed (5 permanent docs exist and are valid)
+    # Check if analysis already completed (Section 1 docs + vault structure exist and are valid)
     # Note: tasks_draft.json gets renamed to tasks.json after approval, so we don't check for it
     permanent_docs = [
+        # Section 1 docs
         project_dir / "docs/system_design.md",
         project_dir / "docs/security_policy.md",
         project_dir / "docs/ui_standards.md",
         project_dir / "docs/master_plan.md",
-        project_dir / "docs/codex.md",
+        # Vault structure (check key files)
+        project_dir / ".relay/vault/INDEX.md",
+        project_dir / ".relay/vault/architecture/tech-stack.md",
+        project_dir / ".relay/vault/backend/api-endpoints.md",
     ]
 
     MIN_SIZE_BYTES = 800  # ~200 words minimum
@@ -199,11 +266,17 @@ def run_codebase_analysis(project_dir: Path) -> bool:
     tasks_db_exists = (project_dir / ".relay/tasks.db").exists()
 
     if all_docs_exist and (tasks_draft_exists or tasks_approved_exists or tasks_db_exists):
-        print("✅ Analysis already complete! All 5 planning documents exist.\n")
+        print("✅ Analysis already complete! Section 1 docs + vault structure exist.\n")
         print("Documents found:")
         for doc in permanent_docs:
             size = doc.stat().st_size
             print(f"  ✓ {doc.relative_to(project_dir)} ({size} bytes)")
+
+        # Count vault files
+        vault_dir = project_dir / ".relay/vault"
+        if vault_dir.exists():
+            vault_files = list(vault_dir.rglob("*.md"))
+            print(f"\n  ✓ Vault: {len(vault_files)} markdown files")
 
         # Check task status
         if tasks_db_exists:
@@ -307,14 +380,22 @@ def run_codebase_analysis(project_dir: Path) -> bool:
             logger.error(f"Stderr: {error_output}")
             return False
 
-        # Verify documents created + content quality (Expert fix #5)
+        # Verify Section 1 docs + vault structure created (Expert fix #5)
         required_docs = [
+            # Section 1 planning docs
             project_dir / "docs/system_design.md",
             project_dir / "docs/security_policy.md",
             project_dir / "docs/ui_standards.md",
             project_dir / "docs/master_plan.md",
-            project_dir / "docs/codex.md",  # Living Codex - initial snapshot from actual code
-            project_dir / ".relay/tasks_draft.json"  # Draft tasks for approval
+            # Vault structure
+            project_dir / ".relay/vault/INDEX.md",
+            project_dir / ".relay/vault/CHANGELOG.md",
+            project_dir / ".relay/vault/architecture/tech-stack.md",
+            project_dir / ".relay/vault/architecture/database-schema.md",
+            project_dir / ".relay/vault/backend/api-endpoints.md",
+            project_dir / ".relay/vault/frontend/pages.md",
+            # Tasks draft
+            project_dir / ".relay/tasks_draft.json"
         ]
 
         MIN_SIZE_BYTES = 800  # ~200 words minimum
@@ -329,7 +410,7 @@ def run_codebase_analysis(project_dir: Path) -> bool:
                 logger.error(f"Document too short (likely failed): {doc} ({size} bytes, need {MIN_SIZE_BYTES}+)")
                 return False
 
-        logger.info("✅ Codebase analysis complete!")
+        logger.info("✅ Codebase analysis complete! Generated Section 1 docs + vault structure.")
 
         # === USER APPROVAL PHASE (Expert fix #4) ===
         return _run_approval_flow(project_dir)
