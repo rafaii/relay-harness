@@ -278,23 +278,24 @@ class Executor:
 
     async def _update_codex_for_completed_tasks(self):
         """
-        Update Living Codex for tasks that recently completed.
+        Update vault for tasks that recently completed.
 
-        Tracks which tasks have been processed and updates codex for new completions.
+        Tracks which tasks have been processed and updates vault for new completions.
+        Falls back to legacy codex writer if vault doesn't exist.
         """
         try:
             # Track processed tasks in executor state
-            if not hasattr(self, '_codex_processed_tasks'):
+            if not hasattr(self, '_vault_processed_tasks'):
                 # On first run, mark all ALREADY-DONE tasks as processed
-                # (we only update Codex for tasks that complete DURING this session)
+                # (we only update vault for tasks that complete DURING this session)
                 session = self.db.get_session()
                 try:
                     from core.database import Task
                     already_done = session.query(Task).filter(Task.status == "done").all()
-                    self._codex_processed_tasks = {task.id for task in already_done}
-                    if self._codex_processed_tasks:
+                    self._vault_processed_tasks = {task.id for task in already_done}
+                    if self._vault_processed_tasks:
                         logger.info(
-                            f"Skipping Codex update for {len(self._codex_processed_tasks)} "
+                            f"Skipping vault update for {len(self._vault_processed_tasks)} "
                             f"tasks that were already done before this session"
                         )
                 finally:
@@ -312,13 +313,8 @@ class Executor:
 
                 for task in completed_tasks:
                     # Skip if already processed
-                    if task.id in self._codex_processed_tasks:
+                    if task.id in self._vault_processed_tasks:
                         continue
-
-                    # Update codex for this task
-                    logger.info(f"Updating Living Codex for completed task {task.id}")
-
-                    from core.codex_writer import update_codex
 
                     task_data = {
                         'title': task.title,
@@ -326,14 +322,38 @@ class Executor:
                         'description': task.description
                     }
 
-                    success = await update_codex(self.project_dir, task.id, task_data)
+                    # Check if vault exists
+                    vault_dir = self.project_dir / ".relay" / "vault"
+                    if vault_dir.exists():
+                        # Use new vault writer
+                        logger.info(f"Updating vault for completed task {task.id}")
+                        from core.vault_writer import update_vault, should_update_vault
 
-                    if success:
-                        # Mark as processed
-                        self._codex_processed_tasks.add(task.id)
-                        logger.info(f"✅ Codex updated for {task.id}")
+                        # Check if this task should update vault
+                        if not should_update_vault(task_data):
+                            logger.info(f"Skipping vault update for {task.id} (QA/Security task)")
+                            self._vault_processed_tasks.add(task.id)
+                            continue
+
+                        success = await update_vault(self.project_dir, task.id, task_data)
+
+                        if success:
+                            self._vault_processed_tasks.add(task.id)
+                            logger.info(f"✅ Vault updated for {task.id}")
+                        else:
+                            logger.warning(f"⚠️  Vault update failed for {task.id} (will retry next iteration)")
                     else:
-                        logger.warning(f"⚠️  Codex update failed for {task.id} (will retry next iteration)")
+                        # Fall back to legacy codex writer
+                        logger.info(f"Updating codex (legacy) for completed task {task.id}")
+                        from core.codex_writer import update_codex
+
+                        success = await update_codex(self.project_dir, task.id, task_data)
+
+                        if success:
+                            self._vault_processed_tasks.add(task.id)
+                            logger.info(f"✅ Codex updated for {task.id}")
+                        else:
+                            logger.warning(f"⚠️  Codex update failed for {task.id} (will retry next iteration)")
 
             finally:
                 session.close()
