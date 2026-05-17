@@ -191,18 +191,17 @@ async def _update_vault_file(
                 "claude",
                 "--model", model_id,
                 "--dangerously-skip-permissions",
-                prompt,
             ],
             cwd=str(project_dir),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            stdin=subprocess.DEVNULL,
+            stdin=subprocess.PIPE,  # Pass prompt via stdin
         )
 
-        # Wait with timeout (30 seconds should be enough for a small entry)
+        # Wait with timeout (60 seconds for analysis + generation)
         stdout, stderr = await asyncio.wait_for(
-            asyncio.to_thread(process.communicate),
-            timeout=30.0
+            asyncio.to_thread(process.communicate, input=prompt.encode("utf-8")),
+            timeout=60.0
         )
 
         if process.returncode != 0:
@@ -210,11 +209,25 @@ async def _update_vault_file(
             logger.error(f"Vault update failed for {vault_file}: {error_msg}")
             return False
 
+        # Parse the output (should be bullet points)
+        entry = stdout.decode().strip()
+
+        if not entry:
+            logger.error(f"Empty vault entry generated for {vault_file}")
+            return False
+
+        # Append entry to vault file
+        vault_file_content = vault_file_path.read_text()
+        if not vault_file_content.endswith("\n"):
+            vault_file_content += "\n"
+        vault_file_content += f"{entry}\n"
+        vault_file_path.write_text(vault_file_content)
+
         logger.info(f"✅ Vault file updated: {vault_file}")
         return True
 
     except asyncio.TimeoutError:
-        logger.error(f"Vault update timed out for {vault_file} (30s limit)")
+        logger.error(f"Vault update timed out for {vault_file} (60s limit)")
         process.kill()
         return False
     except Exception as e:
@@ -240,54 +253,33 @@ def _build_vault_update_prompt(
     # Determine what type of entry to generate based on vault file
     entry_instructions = _get_entry_instructions(vault_file)
 
-    prompt = f"""# Vault Update: {vault_file}
+    prompt = f"""# Generate Vault Entry
 
-You just completed this task:
-**Task ID:** {task_id}
+Task completed:
+**ID:** {task_id}
 **Title:** {task_data.get('title', 'Unknown')}
 **Role:** {task_data.get('role', 'Unknown')}
 
 **What was built (from task log):**
 {task_log}
 
-Your job:
-Append a new entry to `.relay/vault/{vault_file}` documenting what was JUST BUILT.
-
 {entry_instructions}
 
-CRITICAL RULES:
+**Output ONLY the vault entry (1-3 bullet points). No explanations, no file edits.**
 
-1. **ULTRA-CONCISE** - One line per feature. No paragraphs. No fluff.
-2. **What + How** - State what it does and how (implementation detail in 1-2 words)
-3. **Present tense** - "Creates", "Returns", "Validates"
-4. **No explanations** - Just facts. No "This allows users to" or "The purpose is"
-5. **No task IDs** - Don't mention "{task_id}"
-6. **No future plans** - "will", "todo", "planned" forbidden
-7. **Bullet points** - Use bullets, not paragraphs
+RULES:
+1. ULTRA-CONCISE - One line per item
+2. Present tense: "Creates", "Returns", "Validates"
+3. Format: `thing` - What it does, how it works
+4. NO task IDs, NO "will"/"todo", NO paragraphs
 
-**Good examples (concise):**
+Example output:
 ```
 - `POST /api/contacts` - Creates contact with validation, returns 201/contact or 400/errors
 - `UserService.findByEmail()` - Queries users table by email with case-insensitive match
-- `/dashboard` - Shows metrics cards + chart (React Query for data, Recharts for viz)
-- `<Button>` - Primary/secondary variants, supports loading state and icons
 ```
 
-**Bad examples (verbose):**
-```
-❌ "The POST /api/contacts endpoint allows users to create new contacts. It validates
-   the input data including name, email, and phone fields. Authentication is required.
-   Returns a 201 status code with the created contact object on success..."
-
-❌ "This service provides functionality for finding users by their email address.
-   It implements case-insensitive matching to improve user experience..."
-```
-
-**Format your entry like the "Good examples" - ultra-concise, one line per item.**
-
----
-
-Now append YOUR entry for what was built in this task.
+Output ONLY the bullet points (starting with "- "), nothing else.
 """
 
     return prompt
