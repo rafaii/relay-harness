@@ -1162,6 +1162,10 @@ References: docs/system_design.md, docs/security_policy.md
 **Current Status**: `{task.status}`
 """
 
+        # Generate vault update instructions for this task
+        from core.vault_instructions import get_vault_update_section
+        vault_update_instructions = get_vault_update_section(task.description or "", self.project_dir)
+
         return f"""{system_prompt}
 
 ---
@@ -1174,9 +1178,9 @@ References: docs/system_design.md, docs/security_policy.md
 
 {relevant_context}
 
----
+{vault_update_instructions}
 
-**Note:** Read full files if needed: `docs/system_design.md`, `docs/security_policy.md`, `docs/ui_standards.md`
+**Note:** Read full files if needed: `.relay/vault/planning/system_design.md`, `.relay/vault/planning/security_policy.md`, `.relay/vault/planning/ui_standards.md`
 """
 
     def _generate_qa_prompt(self, task: Task, agent_id: str, agent_name: str) -> str:
