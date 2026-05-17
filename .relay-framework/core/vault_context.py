@@ -16,36 +16,41 @@ logger = logging.getLogger(__name__)
 # Role-specific vault file mappings
 ROLE_VAULT_FILES = {
     "backend_developer": [
+        "planning/system_design.md",
+        "planning/security_policy.md",
         "architecture/database-schema.md",
         "backend/api-endpoints.md",
         "backend/services.md",
         "security/authentication.md",
     ],
     "frontend_developer": [
-        "frontend/ui-standards.md",
+        "planning/system_design.md",
+        "planning/ui_standards.md",
         "frontend/pages.md",
         "frontend/components.md",
         "backend/api-endpoints.md",  # Frontend needs to know API contracts
     ],
     "qa": [
+        "planning/system_design.md",
+        "planning/security_policy.md",
         "backend/api-endpoints.md",
         "frontend/pages.md",
-        "security/security-policy.md",
     ],
     "security": [
-        "security/security-policy.md",
+        "planning/security_policy.md",
         "security/authentication.md",
         "backend/api-endpoints.md",
         "integrations/integrations.md",
     ],
     "database": [
+        "planning/system_design.md",
         "architecture/database-schema.md",
         "backend/services.md",
     ],
     "devops": [
+        "planning/system_design.md",
         "architecture/tech-stack.md",
         "integrations/integrations.md",
-        "security/security-policy.md",
     ],
 }
 
@@ -101,8 +106,11 @@ class VaultContextManager:
             Combined vault content (targeted sections only)
         """
         if not self.vault_exists:
-            # Fall back to legacy codex summaries
-            return self._get_legacy_context(role)
+            logger.error(
+                f"Vault not found at {self.vault_dir}. "
+                "Run 'python3 .relay-framework/tools/migrate_to_vault.py .' to create vault structure."
+            )
+            return ""
 
         # Get base vault files for role
         vault_files = self._get_vault_files_for_role(role)
@@ -173,33 +181,6 @@ class VaultContextManager:
             logger.error(f"Failed to read vault file {vault_file}: {e}")
             return None
 
-    def _get_legacy_context(self, role: str) -> str:
-        """
-        Fall back to legacy codex summaries if vault doesn't exist.
-
-        Args:
-            role: Agent role
-
-        Returns:
-            Codex summary content
-        """
-        # Map role to agent_type for summary files
-        agent_type = role
-        if role in ["backend_developer", "frontend_developer"]:
-            agent_type = role.replace("_developer", "")
-        elif role == "database":
-            agent_type = "backend"  # Database agents use backend summary
-        elif role == "devops":
-            agent_type = "backend"  # DevOps agents use backend summary
-
-        summary_path = self.project_dir / ".relay" / f"codex_summary_{agent_type}.md"
-
-        if summary_path.exists():
-            logger.info(f"Using legacy codex summary: {summary_path.name}")
-            return summary_path.read_text(encoding="utf-8")
-        else:
-            logger.warning(f"No codex summary found for {role}")
-            return ""
 
     def vault_file_exists(self, vault_file: str) -> bool:
         """Check if a vault file exists."""

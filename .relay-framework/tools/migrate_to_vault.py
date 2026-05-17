@@ -20,6 +20,7 @@ def create_vault_structure(project_dir: Path):
     # Create directories
     dirs = [
         vault_dir,
+        vault_dir / "planning",        # Section 1 planning docs
         vault_dir / "architecture",
         vault_dir / "frontend",
         vault_dir / "backend",
@@ -38,6 +39,29 @@ def create_vault_structure(project_dir: Path):
 def create_index_files(vault_dir: Path):
     """Create index files for each domain."""
 
+    # Domain descriptions (only for domains that exist)
+    domain_descriptions = {
+        "planning": "Section 1 planning docs (system design, security policy, UI standards, master plan)",
+        "architecture": "System design, database schema, API standards, tech stack",
+        "frontend": "Pages, components, UI standards, design system",
+        "backend": "API endpoints, services, business logic",
+        "integrations": "Third-party services and integrations",
+        "security": "Authentication, authorization, security policies",
+        "decisions": "Architecture Decision Records (ADRs)",
+    }
+
+    # Dynamically build domain table based on what exists
+    domain_rows = []
+    for domain_folder in sorted(vault_dir.iterdir()):
+        if domain_folder.is_dir() and not domain_folder.name.startswith("."):
+            domain_name = domain_folder.name
+            description = domain_descriptions.get(domain_name, "Domain documentation")
+            # Capitalize domain name for display
+            display_name = domain_name.replace("_", " ").title()
+            domain_rows.append(f"| [{display_name}]({domain_name}/index.md) | {description} |")
+
+    domains_table = "\n".join(domain_rows)
+
     # Main index
     main_index = """# Project Vault Index
 
@@ -47,7 +71,7 @@ This vault contains all architectural documentation, design standards, and **imp
 
 **CRITICAL:** This vault documents the **CURRENT STATE**, not future plans:
 - ✅ **What EXISTS** - APIs implemented, pages deployed, integrations working
-- ❌ **What's PLANNED** - Stored in `docs/master_plan.md` (task planning, not here)
+- ❌ **What's PLANNED** - Stored in `planning/master_plan.md` (future roadmap)
 
 **Exception:** The `decisions/` folder contains ADRs that can have status "Proposed" (discussing what to build) or "Accepted" (documenting decisions made).
 
@@ -55,16 +79,15 @@ This vault contains all architectural documentation, design standards, and **imp
 
 | Domain | Description |
 |--------|-------------|
-| [Architecture](architecture/index.md) | System design, database schema, API standards, tech stack |
-| [Frontend](frontend/index.md) | Pages, components, UI standards, design system |
-| [Backend](backend/index.md) | API endpoints, services, business logic |
-| [Integrations](integrations/index.md) | Third-party services and integrations |
-| [Security](security/index.md) | Authentication, authorization, security policies |
-| [Decisions](decisions/index.md) | Architecture Decision Records (ADRs) |
+{domains_table}
 
 ## Quick Links
 
 - [Changelog](CHANGELOG.md) - All updates to the vault
+- [System Design](planning/system_design.md) - Overall architecture (Section 1)
+- [Security Policy](planning/security_policy.md) - Security standards (Section 1)
+- [UI Standards](planning/ui_standards.md) - Design system (Section 1)
+- [Master Plan](planning/master_plan.md) - Future roadmap and improvement tasks
 - [Tech Stack](architecture/tech-stack.md) - Technologies and frameworks used
 - [Database Schema](architecture/database-schema.md) - Database tables and relationships
 - [API Endpoints](backend/api-endpoints.md) - All REST/GraphQL endpoints
@@ -74,10 +97,11 @@ This vault contains all architectural documentation, design standards, and **imp
 - **For developers**: Read the relevant domain docs before working on a task
 - **For updates**: Update the specific domain file + add entry to CHANGELOG.md
 - **For decisions**: Create an ADR in decisions/ and link from changelog
-""".format(date=datetime.now().strftime("%Y-%m-%d"))
+- **For Obsidian**: Open this folder as an Obsidian vault to view the knowledge graph
+""".format(date=datetime.now().strftime("%Y-%m-%d"), domains_table=domains_table)
 
     (vault_dir / "INDEX.md").write_text(main_index)
-    print(f"✓ Created INDEX.md")
+    print(f"✓ Created INDEX.md with {len(domain_rows)} domains")
 
     # Changelog
     changelog = """# Project Changelog
@@ -108,6 +132,20 @@ Each entry includes:
 
     # Domain indexes
     domain_indexes = {
+        "planning/index.md": """# Planning
+
+Section 1 planning documents (requirements, standards, roadmap).
+
+**NOTE:** These are from the initial planning phase (interview or analysis).
+They define requirements and standards, not implementation details.
+
+## Files
+
+- [system_design.md](system_design.md) - Overall system architecture, tech stack decisions, database schema, API specs
+- [security_policy.md](security_policy.md) - Security standards, authentication requirements, forbidden libraries
+- [ui_standards.md](ui_standards.md) - Design system, colors, typography, component guidelines
+- [master_plan.md](master_plan.md) - Future roadmap and improvement tasks (FUTURE PLANS)
+""",
         "architecture/index.md": """# Architecture
 
 System design, database schema, API standards, and tech stack **AS IMPLEMENTED**.
@@ -201,11 +239,12 @@ def migrate_docs_to_vault(project_dir: Path, vault_dir: Path):
 
     docs_dir = project_dir / "docs"
 
-    # Map of doc files to vault locations
+    # Map of doc files to vault locations (now in planning/)
     migrations = {
-        "system_design.md": "architecture/system-design.md",
-        "security_policy.md": "security/security-policy.md",
-        "ui_standards.md": "frontend/ui-standards.md",
+        "system_design.md": "planning/system_design.md",
+        "security_policy.md": "planning/security_policy.md",
+        "ui_standards.md": "planning/ui_standards.md",
+        "master_plan.md": "planning/master_plan.md",
     }
 
     for src_name, dst_name in migrations.items():

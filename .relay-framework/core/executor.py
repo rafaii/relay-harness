@@ -1115,24 +1115,10 @@ References: docs/system_design.md, docs/security_policy.md
 ---
 """
         else:
-            # Vault doesn't exist yet, use legacy codex summaries
-            agent_type = task.agent_type or role.replace('_developer', '')
-            summary_path = self.project_dir / ".relay" / f"codex_summary_{agent_type}.md"
-
-            if summary_path.exists():
-                try:
-                    codex_summary = summary_path.read_text()
-                    codex_section = f"""
-## 📖 What Is Already Built (Codex Summary - Legacy)
-
-{codex_summary}
-
-**Note:** This is a summary. For full details, read `docs/codex.md` directly.
-
----
-"""
-                except Exception:
-                    pass
+            logger.warning(
+                f"Vault not found at {self.project_dir}/.relay/vault. "
+                "Run 'python3 .relay-framework/tools/migrate_to_vault.py .' to create vault."
+            )
 
         # 2b. Extract relevant context from planning docs
         from core.context_extractor import extract_relevant_context
@@ -1229,20 +1215,10 @@ References: docs/system_design.md, docs/security_policy.md
 ---
 """
         else:
-            # Fall back to legacy codex summary
-            summary_path = self.project_dir / ".relay" / "codex_summary_qa.md"
-            if summary_path.exists():
-                try:
-                    codex_summary = summary_path.read_text()
-                    codex_section = f"""
-## 📖 What Exists (Codex Summary - Legacy)
-
-{codex_summary}
-
----
-"""
-                except Exception:
-                    pass
+            logger.warning(
+                f"Vault not found for QA agent. "
+                "Run 'python3 .relay-framework/tools/migrate_to_vault.py .' to create vault."
+            )
 
         # 2b. Read task log
         task_log_path = self.project_dir / ".relay" / "logs" / f"{task.id}.md"
