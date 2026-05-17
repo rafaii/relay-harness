@@ -516,6 +516,9 @@ def _populate_tasks_database_from_draft(project_dir: Path) -> bool:
     """
     from .database import TaskDatabase
 
+    # Ensure project_dir is a Path object
+    project_dir = Path(project_dir)
+
     draft_file = project_dir / ".relay/tasks_draft.json"
 
     try:
@@ -707,7 +710,7 @@ def _validate_task_quality(tasks: list) -> list:
             )
 
         # Missing doc references
-        doc_refs = ['docs/system_design', 'docs/security_policy', 'docs/ui_standards']
+        doc_refs = ['.relay/vault/planning/system_design', '.relay/vault/planning/security_policy', '.relay/vault/planning/ui_standards']
         if not any(ref in desc for ref in doc_refs):
             warnings.append(f"{task_id}: No doc references")
 
@@ -732,6 +735,9 @@ def _run_approval_flow(project_dir: Path) -> bool:
     Returns:
         True if tasks approved and database created, False otherwise
     """
+    # Ensure project_dir is a Path object
+    project_dir = Path(project_dir)
+
     print("\n" + "="*80)
     print("📋 PROPOSED TASKS - REVIEW REQUIRED")
     print("="*80)
