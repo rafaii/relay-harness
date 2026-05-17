@@ -27,6 +27,19 @@ from sqlalchemy.pool import StaticPool
 
 Base = declarative_base()
 
+# Valid task statuses (9-state workflow from TASK_FLOW.md)
+VALID_TASK_STATUSES = {
+    'todo',
+    'in_development',
+    'ready_for_qa',
+    'in_qa',
+    'qa_failed',
+    'ready_for_security',
+    'in_security',
+    'security_failed',
+    'done'
+}
+
 
 def _utc_now() -> datetime:
     """Return current UTC time."""
@@ -271,7 +284,19 @@ class TaskDatabase:
 
     # Task operations
     def create_task(self, task_data: Dict[str, Any]) -> Task:
-        """Create a new task."""
+        """Create a new task with status validation."""
+        # Validate status if provided
+        status = task_data.get('status', 'todo')
+        if status not in VALID_TASK_STATUSES:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(
+                f"Invalid status '{status}' for task {task_data.get('id', '?')}. "
+                f"Valid statuses: {', '.join(sorted(VALID_TASK_STATUSES))}. "
+                f"Defaulting to 'todo'."
+            )
+            task_data['status'] = 'todo'
+
         session = self.get_session()
         try:
             task = Task(**task_data)
@@ -286,7 +311,21 @@ class TaskDatabase:
             session.close()
 
     def update_task(self, task_id: str, updates: Dict[str, Any]) -> Optional[Task]:
-        """Update a task."""
+        """Update a task with status validation."""
+        # Validate status if being updated
+        if 'status' in updates and updates['status'] not in VALID_TASK_STATUSES:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(
+                f"INVALID STATUS: Task {task_id} attempted to set status='{updates['status']}'. "
+                f"Valid statuses: {', '.join(sorted(VALID_TASK_STATUSES))}. "
+                f"Update REJECTED."
+            )
+            # Remove invalid status from updates to prevent corruption
+            del updates['status']
+            if not updates:
+                return None  # No other updates, abort
+
         session = self.get_session()
         try:
             task = session.query(Task).filter_by(id=task_id).first()
