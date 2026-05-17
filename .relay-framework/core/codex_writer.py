@@ -216,8 +216,7 @@ async def update_codex(project_dir: Path, task_id: str, task_data: dict) -> bool
         logger.info(f"✅ Living Codex updated for task {task_id}")
 
         # Regenerate role-specific summaries after Codex update
-        import asyncio
-        summary_success = asyncio.run(regenerate_summaries(project_dir))
+        summary_success = await regenerate_summaries(project_dir)
         if not summary_success:
             logger.warning("Some Codex summaries failed to generate (non-blocking)")
 
