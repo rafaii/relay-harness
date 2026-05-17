@@ -244,30 +244,33 @@ Append a new entry to `.relay/vault/{vault_file}` documenting what was JUST BUIL
 
 CRITICAL RULES:
 
-1. **Present tense only** - "The API has", "Users can", "The component renders"
-2. **Facts only** - What exists NOW after this task completed
-3. **Append to file** - Don't rewrite the entire file, just add your entry
-4. **Use Write tool** - Read the current file, append your entry, write back
-5. **No task IDs** - Don't mention "{task_id}" in the vault entry
-6. **No future plans** - "will", "todo", "planned" are forbidden
-7. **Keep it concise** - 50-200 words max per entry
+1. **ULTRA-CONCISE** - One line per feature. No paragraphs. No fluff.
+2. **What + How** - State what it does and how (implementation detail in 1-2 words)
+3. **Present tense** - "Creates", "Returns", "Validates"
+4. **No explanations** - Just facts. No "This allows users to" or "The purpose is"
+5. **No task IDs** - Don't mention "{task_id}"
+6. **No future plans** - "will", "todo", "planned" forbidden
+7. **Bullet points** - Use bullets, not paragraphs
 
-Example of what to append:
-
-### New API Endpoint: POST /api/contacts
-
-Creates a new contact with validation. Requires authentication. Returns 201 with contact object or 400 with validation errors.
-
-**Fields:**
-- name (required, string, 2-100 chars)
-- email (required, email format)
-- phone (optional, E.164 format)
-
-**Example:**
-```json
-POST /api/contacts
-{{"name": "John Doe", "email": "john@example.com"}}
+**Good examples (concise):**
 ```
+- `POST /api/contacts` - Creates contact with validation, returns 201/contact or 400/errors
+- `UserService.findByEmail()` - Queries users table by email with case-insensitive match
+- `/dashboard` - Shows metrics cards + chart (React Query for data, Recharts for viz)
+- `<Button>` - Primary/secondary variants, supports loading state and icons
+```
+
+**Bad examples (verbose):**
+```
+❌ "The POST /api/contacts endpoint allows users to create new contacts. It validates
+   the input data including name, email, and phone fields. Authentication is required.
+   Returns a 201 status code with the created contact object on success..."
+
+❌ "This service provides functionality for finding users by their email address.
+   It implements case-insensitive matching to improve user experience..."
+```
+
+**Format your entry like the "Good examples" - ultra-concise, one line per item.**
 
 ---
 
@@ -282,59 +285,60 @@ def _get_entry_instructions(vault_file: str) -> str:
 
     instructions = {
         "backend/api-endpoints.md": """
-**Entry format for API endpoints:**
-- Method and path
-- Purpose (one sentence)
-- Authentication requirements
-- Request body schema
-- Response codes and formats
-- Example request/response
+**ONE LINE per endpoint:**
+`METHOD /path` - What it does, auth (yes/no), returns what
+
+Example: `POST /api/users` - Creates user with email/password validation, no auth, returns 201/user or 400/errors
 """,
         "backend/services.md": """
-**Entry format for services:**
-- Service name and purpose
-- Key methods/functions
-- Dependencies
-- Usage example
+**ONE LINE per service/method:**
+`ClassName.method()` - What it does, key implementation detail
+
+Example: `AuthService.hashPassword()` - Hashes password with bcrypt (12 rounds), returns hash string
 """,
         "frontend/pages.md": """
-**Entry format for pages:**
-- Route path
-- Purpose (one sentence)
-- Key features visible to user
-- Components used
-- Authentication requirement
+**ONE LINE per page:**
+`/route` - What user sees/does, key tech
+
+Example: `/dashboard` - Metrics cards + revenue chart, uses React Query + Recharts, requires auth
 """,
         "frontend/components.md": """
-**Entry format for components:**
-- Component name
-- Purpose and usage
-- Props interface
-- Example usage in JSX
+**ONE LINE per component:**
+`<ComponentName>` - What it renders, key features
+
+Example: `<Button>` - Primary/secondary/ghost variants, loading state, icon support, accessible
 """,
         "architecture/database-schema.md": """
-**Entry format for database changes:**
-- Table name
-- New columns or changes
-- Relationships
-- Indexes added
-- Migration file reference
+**ONE LINE per table/change:**
+`table_name` - Columns added/changed, relationships, indexes
+
+Example: `users` - Added email_verified (bool, default false), index on email, foreign key to subscriptions
 """,
         "integrations/integrations.md": """
-**Entry format for integrations:**
-- Service name
-- Purpose
-- Authentication method
-- Key API calls
-- Environment variables required
+**ONE LINE per integration:**
+Service - What it does, auth method, key calls
+
+Example: Stripe - Payment processing, API key auth, `charges.create()` and `webhooks.verify()`
+""",
+        "architecture/tech-stack.md": """
+**ONE LINE per technology:**
+Tech - Purpose, version
+
+Example: PostgreSQL 16 - Primary database with pgvector extension for embeddings
+""",
+        "security/authentication.md": """
+**ONE LINE per mechanism:**
+Mechanism - How it works, tokens/sessions
+
+Example: JWT auth - RS256 signing, 15min access + 7day refresh tokens, stored in httpOnly cookies
 """,
     }
 
     return instructions.get(vault_file, """
-**Generic entry format:**
-- What was built
-- How it works
-- How to use it
+**ONE LINE per item:**
+What - How it works, key detail
+
+Be ultra-concise.
 """)
 
 

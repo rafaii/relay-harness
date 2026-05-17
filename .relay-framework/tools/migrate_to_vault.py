@@ -239,14 +239,62 @@ def split_codex(project_dir: Path, vault_dir: Path):
     print(f"   - vault/integrations/integrations.md")
     print(f"\n   You should manually review and organize the content.")
 
-    # Create placeholder files
+    # Create placeholder files with concise format examples
     placeholders = {
-        "architecture/tech-stack.md": "# Tech Stack\n\n_Extract from codex.md_\n",
-        "architecture/database-schema.md": "# Database Schema\n\n_Extract from codex.md_\n",
-        "backend/api-endpoints.md": "# API Endpoints\n\n_Extract from codex.md_\n",
-        "frontend/pages.md": "# Pages\n\n_Extract from codex.md_\n",
-        "frontend/components.md": "# Components\n\n_Extract from codex.md_\n",
-        "integrations/integrations.md": "# Integrations\n\n_Extract from codex.md_\n",
+        "architecture/tech-stack.md": """# Tech Stack
+
+**Format: ONE LINE per technology**
+`Technology` - Purpose, version
+
+## Example
+- PostgreSQL 16 - Primary database with pgvector for embeddings
+- Node.js 20 - Backend runtime
+- React 18 - Frontend UI library
+""",
+        "architecture/database-schema.md": """# Database Schema
+
+**Format: ONE LINE per table**
+`table_name` - Columns, indexes, relationships
+
+## Example
+- users - email (unique), password_hash, created_at, index on email
+""",
+        "backend/api-endpoints.md": """# API Endpoints
+
+**Format: ONE LINE per endpoint**
+`METHOD /path` - What it does, auth (yes/no), returns what
+
+## Example
+- `POST /api/users` - Creates user with validation, no auth, returns 201/user or 400/errors
+- `GET /api/users/:id` - Fetches user by ID, requires JWT, returns 200/user or 404
+""",
+        "frontend/pages.md": """# Pages
+
+**Format: ONE LINE per page**
+`/route` - What user sees/does, key tech
+
+## Example
+- `/dashboard` - Metrics cards + chart, React Query + Recharts, requires auth
+- `/login` - Email/password form, redirects to dashboard on success
+""",
+        "frontend/components.md": """# Components
+
+**Format: ONE LINE per component**
+`<ComponentName>` - What it renders, key features
+
+## Example
+- `<Button>` - Primary/secondary/ghost variants, loading state, accessible
+- `<Modal>` - Overlay dialog, click outside to close, focus trap
+""",
+        "integrations/integrations.md": """# Integrations
+
+**Format: ONE LINE per integration**
+Service - What it does, auth method, key API calls
+
+## Example
+- Stripe - Payment processing, API key auth, charges.create() + webhooks
+- SendGrid - Email delivery, API key auth, mail.send()
+""",
     }
 
     for filename, content in placeholders.items():

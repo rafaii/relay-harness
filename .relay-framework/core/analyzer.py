@@ -162,51 +162,41 @@ High-signal source files (schemas, models, routes):
 
    **Vault files to create:**
 
-   a) `.relay/vault/INDEX.md` - Main navigation (use template from migrate_to_vault.py)
+   **CRITICAL: ULTRA-CONCISE FORMAT**
+   - ONE LINE per item (endpoint, page, component, etc.)
+   - Format: `thing` - what it does, how (1-2 word implementation detail)
+   - NO paragraphs, NO explanations, NO fluff
+   - Present tense verbs: Creates, Returns, Validates, Renders
 
-   b) `.relay/vault/CHANGELOG.md` - Initial entry noting vault creation
+   **Examples of GOOD (concise) entries:**
+   ```
+   - `POST /api/users` - Creates user with validation, returns 201/user or 400/errors
+   - `UserService.hash()` - Hashes password with bcrypt (12 rounds)
+   - `/dashboard` - Metrics cards + chart, React Query + Recharts, requires auth
+   - `<Button>` - Primary/secondary variants, loading state, accessible
+   - Stripe - Payment processing, API key auth, charges.create() + webhooks
+   - JWT auth - RS256 signing, 15min access + 7day refresh, httpOnly cookies
+   ```
 
-   c) `.relay/vault/architecture/tech-stack.md`:
-      - Languages, frameworks, libraries INSTALLED
-      - Build tools configured
-      - Runtime environments
+   **Examples of BAD (verbose) entries:**
+   ```
+   ❌ "The POST /api/users endpoint allows users to create new accounts. It validates
+      email format and password strength. Returns 201 on success with user object..."
+   ❌ "This button component provides various styling options including primary and
+      secondary variants. It supports loading states and accessibility features..."
+   ```
 
-   d) `.relay/vault/architecture/database-schema.md`:
-      - Tables that EXIST (from models/migrations)
-      - Columns and types
-      - Relationships
-      - Indexes
-
-   e) `.relay/vault/backend/api-endpoints.md`:
-      - API endpoints that WORK (from route files)
-      - Method, path, purpose
-      - Request/response formats
-
-   f) `.relay/vault/backend/services.md`:
-      - Business logic services that EXIST
-      - Key functions/methods
-
-   g) `.relay/vault/frontend/pages.md`:
-      - Pages that ARE deployed
-      - Route, purpose, features
-
-   h) `.relay/vault/frontend/components.md`:
-      - Shared components that ARE built
-      - Props, usage
-
-   i) `.relay/vault/integrations/integrations.md`:
-      - Third-party integrations that WORK
-      - Auth method, key API calls
-
-   j) `.relay/vault/security/authentication.md`:
-      - Auth mechanisms in place
-      - Session management
-
+   a) `.relay/vault/INDEX.md` - Main navigation
+   b) `.relay/vault/CHANGELOG.md` - Initial entry
+   c) `.relay/vault/architecture/tech-stack.md` - ONE LINE per tech (Tech - purpose, version)
+   d) `.relay/vault/architecture/database-schema.md` - ONE LINE per table (table - columns, indexes)
+   e) `.relay/vault/backend/api-endpoints.md` - ONE LINE per endpoint (METHOD /path - what, auth, returns)
+   f) `.relay/vault/backend/services.md` - ONE LINE per service/method (Class.method() - what, how)
+   g) `.relay/vault/frontend/pages.md` - ONE LINE per page (/route - what user sees, key tech)
+   h) `.relay/vault/frontend/components.md` - ONE LINE per component (<Name> - what, features)
+   i) `.relay/vault/integrations/integrations.md` - ONE LINE per integration (Service - what, auth, calls)
+   j) `.relay/vault/security/authentication.md` - ONE LINE per mechanism (Type - how, tokens/sessions)
    k) Create empty index.md for each domain folder
-
-   **Be honest about partial implementations:**
-   Good: "Stripe integration: client initialized, payment intent endpoint exists, webhooks not yet handled"
-   Bad: "Stripe integration: complete" (when it's not)
 
    This is the source of truth for what is built. After this initial snapshot,
    it will be updated automatically after each completed task.
