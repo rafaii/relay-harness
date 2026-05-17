@@ -33,11 +33,13 @@ Your task:
 
 **Documents to Create:**
 
-**Section 1 Planning Docs (docs/):**
-- docs/system_design.md (overall architecture, from Section 1)
-- docs/security_policy.md (security standards, from Section 1)
-- docs/ui_standards.md (design system, from Section 1)
-- docs/master_plan.md (refactoring/improvement roadmap - FUTURE PLANS)
+**ALL documentation goes in .relay/vault/ (no separate docs/ folder)**
+
+**Section 1 Planning Docs (.relay/vault/planning/):**
+- .relay/vault/planning/system_design.md (overall architecture - ULTRA-CONCISE)
+- .relay/vault/planning/security_policy.md (security standards - ULTRA-CONCISE)
+- .relay/vault/planning/ui_standards.md (design system - ULTRA-CONCISE)
+- .relay/vault/planning/master_plan.md (refactoring/improvement roadmap - FUTURE PLANS)
 
 **Vault Documentation (.relay/vault/):**
 - .relay/vault/INDEX.md (main index)
@@ -95,10 +97,97 @@ High-signal source files (schemas, models, routes):
    - UI components (component structure, styling)
    - Security implementations (auth, validation)
 
-2. For Section 1 docs (system_design, security_policy, ui_standards):
+2. For Section 1 docs (.relay/vault/planning/ folder):
+
+   **CRITICAL: Use ULTRA-CONCISE FORMAT for Section 1 docs**
+   - ✅ ONE LINE per item - No paragraphs, no fluff
+   - ✅ Bullets and tables - Never prose
+   - ✅ What + How in 5-10 words - "JWT auth with RS256, 15min tokens"
+   - ✅ Present tense - "Uses", "Requires", "Provides"
+   - ❌ No explanations - Just facts, no "This allows users to" or "The purpose is"
+
+   **Good examples:**
+   - Frontend: React 18 + Vite, TailwindCSS, React Query for data, React Router
+   - Database: PostgreSQL 16 with pgvector extension for embeddings
+   - Auth: JWT (RS256), 15min access + 7day refresh tokens, bcrypt(12) for passwords
+
+   **Bad examples (too verbose):**
+   - ❌ "The frontend is built using React version 18 which provides improved performance..."
+
+   **Write these files:**
+   - .relay/vault/planning/system_design.md (current architecture + gaps)
+   - .relay/vault/planning/security_policy.md (current security + recommendations)
+   - .relay/vault/planning/ui_standards.md (current design system)
+   - .relay/vault/planning/master_plan.md (FUTURE improvements roadmap)
+
+   **What to document:**
    - What EXISTS (current state)
    - What's MISSING (gaps to fill)
    - Recommendations (improvements)
+
+   **Format for system_design.md:**
+   ### 1. Tech Stack (one-line bullets)
+   - Frontend: [Framework + version], [build tool], [styling], [key libraries]
+   - Backend: [Framework + version], [runtime], [key libraries]
+   - Database: [Type + version], [ORM], [migration tool]
+
+   ### 2. Architecture (one-line bullets + simple ASCII diagram)
+   - Component responsibilities (one line each)
+   - Data flow: [A] → [B] → [C]
+
+   ### 3. Database Schema (compact table)
+   | Table | Key Fields | Relationships | Indexes |
+   |-------|-----------|--------------|---------|
+
+   ### 4. API Specifications (table format)
+   | Method | Path | Auth | Purpose |
+   |--------|------|------|---------|
+
+   **Format for security_policy.md:**
+   ### 1. Auth & Authorization (one-line bullets)
+   - Auth method: [type] with [details]
+   - Password: [algo](cost), min [N] chars
+   - Session: [timeout], [refresh strategy]
+
+   ### 2. Encryption (one-line bullets)
+   - At-rest: [algo] for [what]
+   - In-transit: [TLS version]
+
+   ### 3. Forbidden Libraries (table)
+   | Library | Reason | Use Instead |
+
+   ### 4. Input Validation (one line per threat)
+   - SQL Injection: [mitigation]
+   - XSS: [mitigation]
+
+   **Format for ui_standards.md:**
+   ### 1. Design Language (one-line bullets)
+   - Philosophy: [style]
+   - Principles: [list]
+
+   ### 2. Color Palette (structured lists with HEX codes)
+   - Primary: #HEX
+   - Secondary: #HEX
+   - Semantic: Success #HEX, Error #HEX
+
+   ### 3. Typography (structured lists)
+   - Fonts: [primary], [secondary]
+   - Sizes: xs/sm/base/lg/xl with rem values
+
+   ### 4. Components (one-line descriptions)
+   - Buttons: [variants, states, sizes]
+   - Forms: [input styles, validation, error display]
+
+   **Format for master_plan.md:**
+   ### 1. Overview (bullets)
+   - Name: [project]
+   - Objectives: [3-5 bullets]
+
+   ### 2. Phases (compact format)
+   - Phase 1: [name] - [what gets built]
+
+   ### 3. Tasks (ultra-compact)
+   - [TASK-001] Title | role | deps | complexity
 
 3. For Vault files (architecture, backend, frontend, etc.):
    - **ONLY what EXISTS** (present tense, facts)
@@ -115,10 +204,10 @@ High-signal source files (schemas, models, routes):
 
    **CRITICAL TASK REQUIREMENTS:**
    - Each task description MUST be 200+ characters
-   - MUST reference relevant docs (docs/system_design.md, docs/security_policy.md, docs/ui_standards.md)
+   - MUST reference relevant docs (.relay/vault/planning/system_design.md, .relay/vault/planning/security_policy.md, .relay/vault/planning/ui_standards.md)
    - MUST include acceptance criteria
-   - Frontend tasks MUST reference docs/ui_standards.md
-   - Security tasks MUST reference docs/security_policy.md
+   - Frontend tasks MUST reference .relay/vault/planning/ui_standards.md
+   - Security tasks MUST reference .relay/vault/planning/security_policy.md
 
    **JSON Format (tasks_draft.json):**
    ```json
@@ -212,8 +301,13 @@ High-signal source files (schemas, models, routes):
 - DO NOT wait for user input or approval - that happens after you exit
 
 **COMPLETION CHECKLIST:**
-Once you have written Section 1 docs (4 files) + vault structure (11+ files) + tasks_draft.json, respond with:
-"✅ Analysis complete. Section 1 docs + vault structure written. Exiting."
+Once you have written:
+- Section 1 planning docs (4 files in .relay/vault/planning/)
+- Vault structure (11+ files in .relay/vault/)
+- tasks_draft.json (in .relay/)
+
+Respond with:
+"✅ Analysis complete. Vault structure + planning docs written. Exiting."
 Then stop immediately.
 """
 
@@ -235,11 +329,11 @@ def run_codebase_analysis(project_dir: Path) -> bool:
     # Check if analysis already completed (Section 1 docs + vault structure exist and are valid)
     # Note: tasks_draft.json gets renamed to tasks.json after approval, so we don't check for it
     permanent_docs = [
-        # Section 1 docs
-        project_dir / "docs/system_design.md",
-        project_dir / "docs/security_policy.md",
-        project_dir / "docs/ui_standards.md",
-        project_dir / "docs/master_plan.md",
+        # Section 1 planning docs (now in vault)
+        project_dir / ".relay/vault/planning/system_design.md",
+        project_dir / ".relay/vault/planning/security_policy.md",
+        project_dir / ".relay/vault/planning/ui_standards.md",
+        project_dir / ".relay/vault/planning/master_plan.md",
         # Vault structure (check key files)
         project_dir / ".relay/vault/INDEX.md",
         project_dir / ".relay/vault/architecture/tech-stack.md",
@@ -696,17 +790,6 @@ def _run_approval_flow(project_dir: Path) -> bool:
                     project_dir / ".relay/tasks.json"
                 )
                 print("\n✅ Tasks database created!")
-
-                # Generate Codex summaries for all roles
-                print("\n📝 Generating Codex summaries for all roles...")
-                from core.codex_writer import regenerate_summaries
-                import asyncio
-                summary_success = asyncio.run(regenerate_summaries(project_dir))
-
-                if summary_success:
-                    print("✅ Codex summaries generated")
-                else:
-                    print("⚠️  Some summaries failed (agents can still work, but prompts will be longer)")
 
                 print("\nNext: Run 'relay start' to begin execution")
                 return True

@@ -322,10 +322,9 @@ class Executor:
                         'description': task.description
                     }
 
-                    # Check if vault exists
+                    # Update vault
                     vault_dir = self.project_dir / ".relay" / "vault"
                     if vault_dir.exists():
-                        # Use new vault writer
                         logger.info(f"Updating vault for completed task {task.id}")
                         from core.vault_writer import update_vault, should_update_vault
 
@@ -343,17 +342,8 @@ class Executor:
                         else:
                             logger.warning(f"⚠️  Vault update failed for {task.id} (will retry next iteration)")
                     else:
-                        # Fall back to legacy codex writer
-                        logger.info(f"Updating codex (legacy) for completed task {task.id}")
-                        from core.codex_writer import update_codex
-
-                        success = await update_codex(self.project_dir, task.id, task_data)
-
-                        if success:
-                            self._vault_processed_tasks.add(task.id)
-                            logger.info(f"✅ Codex updated for {task.id}")
-                        else:
-                            logger.warning(f"⚠️  Codex update failed for {task.id} (will retry next iteration)")
+                        logger.warning(f"Vault directory not found at {vault_dir}. Run 'python3 .relay-framework/tools/migrate_to_vault.py .' to create vault structure.")
+                        self._vault_processed_tasks.add(task.id)  # Skip this task
 
             finally:
                 session.close()

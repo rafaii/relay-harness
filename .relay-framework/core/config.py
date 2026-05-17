@@ -40,7 +40,6 @@ DEFAULT_AGENT_MODELS = {
     'backend_developer': 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',  # Backend implementation (API, database, business logic)
     'database': 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',           # Database migrations and schema changes
     'devops': 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',             # DevOps, CI/CD, deployment, infrastructure
-    'codex_writer': 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',      # Living Codex updater (runs after each task)
     'qa': 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',                 # Testing and QA gate
     'security': 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',           # Security scanning and validation gate
 

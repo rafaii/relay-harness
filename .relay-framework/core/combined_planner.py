@@ -8,10 +8,10 @@ This dramatically reduces Section 1 time from 20-40 minutes to 10-15 minutes.
 Process:
 1. PHASE 1: Interactive interview with user
 2. PHASE 2: Generate all planning documents in same session:
-   - docs/system_design.md
-   - docs/security_policy.md
-   - docs/ui_standards.md (NEW in v2.1 - replaces on-demand wireframes)
-   - docs/master_plan.md
+   - .relay/vault/planning/system_design.md
+   - .relay/vault/planning/security_policy.md
+   - .relay/vault/planning/ui_standards.md (NEW in v2.1 - replaces on-demand wireframes)
+   - .relay/vault/planning/master_plan.md
    - .relay/tasks.json
 """
 
@@ -54,10 +54,10 @@ def verify_and_checkpoint_documents(project_dir: Path) -> dict:
     state = db.metadata.get_value(PLANNING_PROGRESS_KEY) or {}
 
     docs = {
-        "system_design.md": project_dir / "docs" / "system_design.md",
-        "security_policy.md": project_dir / "docs" / "security_policy.md",
-        "ui_standards.md": project_dir / "docs" / "ui_standards.md",
-        "master_plan.md": project_dir / "docs" / "master_plan.md",
+        "system_design.md": project_dir / ".relay" / "vault" / "planning" / "system_design.md",
+        "security_policy.md": project_dir / ".relay" / "vault" / "planning" / "security_policy.md",
+        "ui_standards.md": project_dir / ".relay" / "vault" / "planning" / "ui_standards.md",
+        "master_plan.md": project_dir / ".relay" / "vault" / "planning" / "master_plan.md",
         "tasks.json": project_dir / ".relay" / "tasks.json"
     }
 
@@ -140,123 +140,146 @@ After the interview, transition to Phase 2 automatically.
 
 Now generate FOUR documents based on the interview context.
 
-## Document 1: docs/system_design.md
+**CRITICAL FORMATTING RULE FOR ALL DOCUMENTS:**
 
-Write a comprehensive system design document with these sections:
+Use **ULTRA-CONCISE** formatting throughout all planning documents:
+- ✅ **ONE LINE per item** - No paragraphs, no fluff
+- ✅ **Bullets and tables** - Never prose
+- ✅ **What + How in 5-10 words** - "JWT auth with RS256, 15min tokens"
+- ✅ **Present tense** - "Uses", "Requires", "Provides"
+- ❌ **No explanations** - Just facts, no "This allows users to" or "The purpose is"
 
-### 1. Tech Stack Selection
-- **Frontend**: Framework, libraries, build tools, styling
-- **Backend**: Framework, runtime, key libraries
-- **Database**: Type, ORM/ODM, migration strategy
-- **APIs**: REST/GraphQL, documentation approach
-- **DevOps**: Deployment, CI/CD, monitoring
+**Good examples:**
+- Frontend: React 18 + Vite, TailwindCSS, React Query for data, React Router
+- Database: PostgreSQL 16 with pgvector extension for embeddings
+- Auth: JWT (RS256), 15min access + 7day refresh tokens, bcrypt(12) for passwords
 
-### 2. High-Level Architecture
-- System components (diagram in text format using boxes/arrows)
-- Component responsibilities
-- Data flow between components
-- External integrations
-- Scalability considerations
-
-### 3. Database Schema
-- Tables/collections with all fields
-- Data types
-- Relationships (one-to-many, many-to-many)
-- Indexes for performance
-- Sample data structure
-
-### 4. API Specifications
-- Authentication strategy
-- Endpoint list with methods (GET/POST/etc.)
-- Request/response formats
-- Error handling approach
-- Rate limiting strategy
-
-### 5. Data Models
-- Core domain objects
-- Validation rules
-- Business logic location
-- State management approach
-
-**Use the Write tool to create docs/system_design.md**
+**Bad examples (too verbose):**
+- ❌ "The frontend will be built using React version 18 which provides improved performance and concurrent rendering features. We'll use Vite as our build tool because it offers fast hot module replacement and optimized production builds..."
 
 ---
 
-## Document 2: docs/security_policy.md
+## Document 1: .relay/vault/planning/system_design.md
 
-Write a comprehensive security policy with these sections:
+Write a system design document with these sections (ULTRA-CONCISE format):
+
+### 1. Tech Stack Selection
+Use one-line bullets:
+- Frontend: [Framework + version], [build tool], [styling], [key libraries]
+- Backend: [Framework + version], [runtime], [key libraries]
+- Database: [Type + version], [ORM], [migration tool]
+- APIs: [REST/GraphQL], [auth method]
+- DevOps: [deployment platform], [CI/CD tool]
+
+### 2. High-Level Architecture
+- One-line bullets for each component and responsibility
+- ASCII diagram (simple boxes/arrows, 10 lines max)
+- Data flow: [Component A] → [Component B] → [Component C]
+- External integrations: One line each
+
+### 3. Database Schema
+Use compact table format:
+| Table | Key Fields | Relationships | Indexes |
+|-------|-----------|--------------|---------|
+| users | id, email, password_hash | → subscriptions | email |
+| ... | ... | ... | ... |
+
+### 4. API Specifications
+- Auth: [method + token type + expiry]
+- Endpoints: Use table format:
+  | Method | Path | Auth | Purpose |
+  |--------|------|------|---------|
+  | POST | /api/auth/login | No | User login → JWT |
+  | GET | /api/users/:id | JWT | Get user profile |
+
+### 5. Data Models
+One line per model:
+- User: email, password_hash, role (enum), created_at
+- Post: title, content, author_id (→users), published (bool)
+
+**Use the Write tool to create .relay/vault/planning/system_design.md**
+
+---
+
+## Document 2: .relay/vault/planning/security_policy.md
+
+Write a security policy with these sections (ULTRA-CONCISE format):
 
 ### 1. Authentication & Authorization
-- Method: OAuth2, JWT, sessions, etc. (SPECIFIC implementation)
-- Multi-factor authentication requirements
-- Password policy (min length, complexity, hashing algorithm with cost factor)
-- Session management (timeout, refresh strategy)
-- Role-Based Access Control (RBAC) implementation
+One-line bullets only:
+- Auth method: [JWT/OAuth2/sessions] with [specific implementation]
+- MFA: [enabled/optional/disabled] via [method]
+- Password policy: min [N] chars, [complexity rules], [algo](cost)
+- Session: [timeout], [refresh strategy]
+- RBAC: [roles list], [permission model]
 
 ### 2. Data Encryption Standards
-- At-rest encryption: AES-256 for databases, disk encryption
-- In-transit encryption: TLS 1.3 for all connections
-- Key management strategy
-- Secrets storage (environment variables, vault, etc.)
+- At-rest: [algo] for [database/files/disk]
+- In-transit: [TLS version] for all connections
+- Keys: [storage method]
+- Secrets: [env vars/vault/other]
 
 ### 3. Forbidden Library List
-Create a table of libraries to NEVER use:
-| Library | Reason | Recommended Alternative |
-|---------|--------|------------------------|
-| md5 | Cryptographically broken | bcrypt, Argon2 |
+| Library | Reason | Use Instead |
+|---------|--------|-------------|
+| md5 | Broken hash | bcrypt, Argon2 |
+| eval() | Code injection | JSON.parse() |
 | ... | ... | ... |
 
 ### 4. Input Validation & Sanitization
-- **SQL Injection Prevention**: Use parameterized queries, ORMs
-- **XSS Prevention**: Escape output, Content Security Policy
-- **CSRF Prevention**: Tokens, SameSite cookies
-- **File Upload Security**: Type validation, size limits, virus scanning
-- **Path Traversal Prevention**: Whitelist directories, validate paths
+One-line per threat:
+- SQL Injection: Parameterized queries + ORM
+- XSS: Escape output + CSP headers
+- CSRF: Tokens + SameSite cookies
+- File uploads: Type whitelist + size limit + virus scan
+- Path traversal: Whitelist dirs + validate paths
 
 ### 5. OWASP Top 10 Compliance
-Address each OWASP Top 10 vulnerability:
-1. Broken Access Control → [specific measures]
-2. Cryptographic Failures → [specific measures]
-3. Injection → [specific measures]
-4. Insecure Design → [specific measures]
-5. Security Misconfiguration → [specific measures]
-6. Vulnerable Components → [specific measures]
-7. Identification/Authentication Failures → [specific measures]
-8. Software/Data Integrity Failures → [specific measures]
-9. Security Logging/Monitoring Failures → [specific measures]
-10. Server-Side Request Forgery → [specific measures]
+One line per vulnerability with specific mitigation:
+1. Broken Access Control → [RBAC + route guards + permission checks]
+2. Cryptographic Failures → [TLS 1.3 + bcrypt(12) + AES-256]
+3. Injection → [Parameterized queries + input validation]
+4. Insecure Design → [Threat modeling + secure defaults]
+5. Security Misconfiguration → [Hardened configs + least privilege]
+6. Vulnerable Components → [Automated scanning + weekly updates]
+7. Auth Failures → [MFA + rate limiting + session timeout]
+8. Data Integrity → [Signature verification + checksums]
+9. Logging Failures → [Centralized logging + alert rules]
+10. SSRF → [URL whitelist + network segmentation]
 
 ### 6. Secure Coding Guidelines
-- Error handling (don't expose internals)
-- Logging (what to log, what NOT to log)
-- Rate limiting (requests per minute)
-- Security headers (CSP, X-Frame-Options, etc.)
-- Secrets management (never hardcode, use env vars)
-- Dependency scanning (automated tools)
+One line each:
+- Errors: Generic messages to client, details to logs only
+- Logging: Log actions + IPs, never passwords/tokens/PII
+- Rate limiting: [N] req/min per IP, [N] per user
+- Headers: CSP, X-Frame-Options: DENY, HSTS
+- Secrets: Env vars only, never commit to git
+- Dependencies: Automated scan on PR, fail build on high CVEs
 
 ### 7. Security Testing Requirements
-- **SAST**: Static analysis tools to use
-- **DAST**: Dynamic testing approach
-- **Dependency Scanning**: Tools and frequency
-- **Penetration Testing**: Scope and schedule
+- SAST: [tool name], runs on PR
+- DAST: [tool name], runs on staging
+- Dependency scan: [tool name], weekly
+- Pentest: [scope], [frequency]
 
-**CRITICAL:** Be SPECIFIC and ACTIONABLE. Instead of "use strong hashing", say "use bcrypt.hash(password, 12)".
+**Be SPECIFIC:** Use "bcrypt(12)" not "strong hashing", use "15min timeout" not "short timeout".
 
-**Use the Write tool to create docs/security_policy.md**
+**Use the Write tool to create .relay/vault/planning/security_policy.md**
 
 ---
 
-## Document 3: docs/ui_standards.md
+## Document 3: .relay/vault/planning/ui_standards.md
 
-Write a comprehensive UI/UX design system document that frontend developers will reference for ALL UI implementation.
+Write a UI/UX design system document (ULTRA-CONCISE format with specific values).
 
 **IMPORTANT:** This document replaces task-specific wireframes. It must provide complete design guidance so frontend developers never need additional wireframe generation.
 
 ### 1. Design Language & Principles
-- Overall design philosophy (modern, minimal, accessible, corporate, playful, etc.)
-- Design principles (consistency, clarity, efficiency, user-centric)
-- Brand personality and tone
-- Target audience and use cases
+One-line bullets:
+- Philosophy: [modern/minimal/accessible/corporate/playful]
+- Principles: [consistency, clarity, efficiency, user-centric]
+- Brand: [personality/tone]
+- Audience: [target users]
 
 ### 2. Color Palette
 Define a complete color system with HEX codes:
@@ -565,38 +588,34 @@ Define a consistent spacing scale (8px base):
 - Color: Inherit from text color or use semantic colors
 - Always provide aria-label for icon-only buttons
 
-**Use the Write tool to create docs/ui_standards.md**
+**Use the Write tool to create .relay/vault/planning/ui_standards.md**
 
 ---
 
-## Document 4a: docs/master_plan.md
+## Document 4a: .relay/vault/planning/master_plan.md
 
-Write a human-readable master plan with:
+Write a master plan (ULTRA-CONCISE format):
 
 ### 1. Project Overview
-- Project name and summary (from interview)
-- Key objectives
-- Success criteria
-- Requirements summary (from interview context)
+- Name: [project name]
+- Summary: [1-2 sentences]
+- Objectives: [3-5 bullet points]
+- Success criteria: [measurable outcomes]
 
 ### 2. Implementation Phases
-Break the project into 3-5 phases:
-- Phase 1: Architecture & Foundation
-- Phase 2: Core Features
-- Phase 3: Additional Features
-- Phase 4: Testing & Polish
-- (etc.)
+List 3-5 phases with one-line descriptions:
+- Phase 1: Architecture & Foundation - [what gets built]
+- Phase 2: Core Features - [key features]
+- Phase 3: Additional Features - [secondary features]
+- Phase 4: Testing & Polish - [QA and deployment]
 
 ### 3. Task Breakdown per Phase
-For each phase, list tasks with:
-- Task ID (ARCH-001, BE-001, FE-001, etc.)
-- Task title
-- Brief description
-- Dependencies (task IDs)
-- Assigned role (frontend_developer or backend_developer)
-- Complexity (1-5)
+Use compact format:
+- [ARCH-001] Setup database schema | backend_developer | deps: none | complexity: 3
+- [BE-001] Create auth API | backend_developer | deps: ARCH-001 | complexity: 4
+- [FE-001] Landing page | frontend_developer | deps: BE-001 | complexity: 2
 
-**Use the Write tool to create docs/master_plan.md**
+**Use the Write tool to create .relay/vault/planning/master_plan.md**
 
 ---
 
@@ -663,16 +682,16 @@ Each task `description` field is the ONLY source of context for agents. Include:
 2. **Acceptance criteria** - How to verify it's done correctly
 3. **Dependencies explained** - Why this depends on other tasks
 4. **SECTION 1 references** - Point to relevant docs:
-   - "See docs/system_design.md section 3 for database schema"
-   - "Follow authentication requirements in docs/security_policy.md section 1"
+   - "See .relay/vault/planning/system_design.md section 3 for database schema"
+   - "Follow authentication requirements in .relay/vault/planning/security_policy.md section 1"
 5. **Technical details** - Specific frameworks, libraries, patterns to use
 6. **Security requirements** - Reference security policy if applicable
-7. **For frontend tasks**: Reference docs/ui_standards.md for design system, colors, fonts, and layouts
+7. **For frontend tasks**: Reference .relay/vault/planning/ui_standards.md for design system, colors, fonts, and layouts
 8. **Agent type**: Always include agent_type field ('frontend' or 'backend')
 
 **Good Example:**
 ```
-"description": "Implement user authentication API using OAuth2 with JWT tokens. Follow security requirements in docs/security_policy.md section 1. Use bcrypt for password hashing (12 rounds as specified in security policy). Create POST /auth/login and POST /auth/logout endpoints per docs/system_design.md section 4. Store JWT secret in environment variable JWT_SECRET. Implement token refresh logic with 15-minute access token expiry. Acceptance: User can log in with email/password, receive JWT, and access protected routes. Frontend will call these endpoints from FE-002. Depends on ARCH-001 for user table schema."
+"description": "Implement user authentication API using OAuth2 with JWT tokens. Follow security requirements in .relay/vault/planning/security_policy.md section 1. Use bcrypt for password hashing (12 rounds as specified in security policy). Create POST /auth/login and POST /auth/logout endpoints per .relay/vault/planning/system_design.md section 4. Store JWT secret in environment variable JWT_SECRET. Implement token refresh logic with 15-minute access token expiry. Acceptance: User can log in with email/password, receive JWT, and access protected routes. Frontend will call these endpoints from FE-002. Depends on ARCH-001 for user table schema."
 ```
 
 **Bad Example:**
@@ -687,10 +706,10 @@ Each task `description` field is the ONLY source of context for agents. Include:
 # Completion Checklist
 
 Before finishing, verify you've created:
-- ✅ docs/system_design.md
-- ✅ docs/security_policy.md
-- ✅ docs/ui_standards.md
-- ✅ docs/master_plan.md
+- ✅ .relay/vault/planning/system_design.md
+- ✅ .relay/vault/planning/security_policy.md
+- ✅ .relay/vault/planning/ui_standards.md
+- ✅ .relay/vault/planning/master_plan.md
 - ✅ .relay/tasks.json
 
 If all five files are created, you're done! The framework will automatically convert tasks.json to the tasks.db database.
@@ -799,21 +818,21 @@ def run_combined_planning(project_dir: Path) -> bool:
             return False
 
         # Verify all documents were created
-        system_design_file = project_dir / "docs" / "system_design.md"
-        security_policy_file = project_dir / "docs" / "security_policy.md"
-        ui_standards_file = project_dir / "docs" / "ui_standards.md"
-        master_plan_file = project_dir / "docs" / "master_plan.md"
+        system_design_file = project_dir / ".relay" / "vault" / "planning" / "system_design.md"
+        security_policy_file = project_dir / ".relay" / "vault" / "planning" / "security_policy.md"
+        ui_standards_file = project_dir / ".relay" / "vault" / "planning" / "ui_standards.md"
+        master_plan_file = project_dir / ".relay" / "vault" / "planning" / "master_plan.md"
         tasks_json_file = project_dir / ".relay" / "tasks.json"
 
         missing_files = []
         if not system_design_file.exists():
-            missing_files.append("docs/system_design.md")
+            missing_files.append(".relay/vault/planning/system_design.md")
         if not security_policy_file.exists():
-            missing_files.append("docs/security_policy.md")
+            missing_files.append(".relay/vault/planning/security_policy.md")
         if not ui_standards_file.exists():
-            missing_files.append("docs/ui_standards.md")
+            missing_files.append(".relay/vault/planning/ui_standards.md")
         if not master_plan_file.exists():
-            missing_files.append("docs/master_plan.md")
+            missing_files.append(".relay/vault/planning/master_plan.md")
         if not tasks_json_file.exists():
             missing_files.append(".relay/tasks.json")
 
