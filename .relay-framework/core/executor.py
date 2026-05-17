@@ -1085,16 +1085,35 @@ References: docs/system_design.md, docs/security_policy.md
 
         # === LAYER 2: Dynamic Task Context ===
 
-        # 2a. Get Codex summary (role-specific, ~400 tokens)
-        agent_type = task.agent_type or role.replace('_developer', '')
-        summary_path = self.project_dir / ".relay" / f"codex_summary_{agent_type}.md"
+        # 2a. Get Vault context (targeted, domain-specific)
+        from core.vault_context import VaultContextManager
+
+        if not hasattr(self, '_vault_manager'):
+            self._vault_manager = VaultContextManager(self.project_dir)
+
+        vault_context = self._vault_manager.get_context_for_agent(role, task.description or "")
 
         codex_section = ""
-        if summary_path.exists():
-            try:
-                codex_summary = summary_path.read_text()
-                codex_section = f"""
-## 📖 What Is Already Built (Codex Summary)
+        if vault_context:
+            codex_section = f"""
+## 📖 What Is Already Built (Vault Context)
+
+{vault_context}
+
+**Note:** This is targeted context from the project vault. Read vault files directly for complete details.
+
+---
+"""
+        else:
+            # Vault doesn't exist yet, use legacy codex summaries
+            agent_type = task.agent_type or role.replace('_developer', '')
+            summary_path = self.project_dir / ".relay" / f"codex_summary_{agent_type}.md"
+
+            if summary_path.exists():
+                try:
+                    codex_summary = summary_path.read_text()
+                    codex_section = f"""
+## 📖 What Is Already Built (Codex Summary - Legacy)
 
 {codex_summary}
 
@@ -1102,8 +1121,8 @@ References: docs/system_design.md, docs/security_policy.md
 
 ---
 """
-            except Exception:
-                pass
+                except Exception:
+                    pass
 
         # 2b. Extract relevant context from planning docs
         from core.context_extractor import extract_relevant_context
@@ -1182,22 +1201,38 @@ References: docs/system_design.md, docs/security_policy.md
 
         # === LAYER 2: Dynamic Task Context ===
 
-        # 2a. Get Codex summary (QA-specific, ~300 tokens)
-        summary_path = self.project_dir / ".relay" / "codex_summary_qa.md"
+        # 2a. Get Vault context (targeted for QA)
+        from core.vault_context import VaultContextManager
+
+        if not hasattr(self, '_vault_manager'):
+            self._vault_manager = VaultContextManager(self.project_dir)
+
+        vault_context = self._vault_manager.get_context_for_agent("qa", task.description or "")
 
         codex_section = ""
-        if summary_path.exists():
-            try:
-                codex_summary = summary_path.read_text()
-                codex_section = f"""
-## 📖 What Exists (Codex Summary)
+        if vault_context:
+            codex_section = f"""
+## 📖 What Exists (Vault Context)
+
+{vault_context}
+
+---
+"""
+        else:
+            # Fall back to legacy codex summary
+            summary_path = self.project_dir / ".relay" / "codex_summary_qa.md"
+            if summary_path.exists():
+                try:
+                    codex_summary = summary_path.read_text()
+                    codex_section = f"""
+## 📖 What Exists (Codex Summary - Legacy)
 
 {codex_summary}
 
 ---
 """
-            except Exception:
-                pass
+                except Exception:
+                    pass
 
         # 2b. Read task log
         task_log_path = self.project_dir / ".relay" / "logs" / f"{task.id}.md"
@@ -1637,7 +1672,7 @@ Without sys.exit(0), the process takes 30s-2min to shutdown, blocking other agen
 
     def _generate_security_prompt(self, task: Task, agent_id: str, agent_name: str) -> str:
         """
-        Generate prompt for Security agent with task history awareness.
+        Generate prompt for Security agent with vault context.
 
         Args:
             task: Task to generate Security prompt for
@@ -1647,7 +1682,27 @@ Without sys.exit(0), the process takes 30s-2min to shutdown, blocking other agen
         Returns:
             Security prompt string
         """
-        # Extract relevant context from security policy
+        # Get Vault context for Security agent
+        from core.vault_context import VaultContextManager
+
+        if not hasattr(self, '_vault_manager'):
+            self._vault_manager = VaultContextManager(self.project_dir)
+
+        vault_context = self._vault_manager.get_context_for_agent("security", task.description or "")
+
+        vault_section = ""
+        if vault_context:
+            vault_section = f"""
+
+## 📖 Security Standards & Architecture (Vault Context)
+
+{vault_context}
+
+---
+
+"""
+
+        # Also extract relevant context from security policy (legacy)
         from core.context_extractor import extract_relevant_context
         relevant_context = extract_relevant_context(
             self.project_dir,
@@ -1660,7 +1715,7 @@ Without sys.exit(0), the process takes 30s-2min to shutdown, blocking other agen
 You are **{agent_name}** (Agent ID: `{agent_id}`) performing a security scan on task **{task.id}**.
 
 **NOTE**: This task has been assigned to you by the orchestrator. You have exclusive ownership.
-
+{vault_section}
 ## Instructions
 
 1. **Read the complete task history from markdown log**:
