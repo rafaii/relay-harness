@@ -285,7 +285,21 @@ class Executor:
         try:
             # Track processed tasks in executor state
             if not hasattr(self, '_codex_processed_tasks'):
-                self._codex_processed_tasks = set()
+                # On first run, mark all ALREADY-DONE tasks as processed
+                # (we only update Codex for tasks that complete DURING this session)
+                session = self.db.get_session()
+                try:
+                    from core.database import Task
+                    already_done = session.query(Task).filter(Task.status == "done").all()
+                    self._codex_processed_tasks = {task.id for task in already_done}
+                    if self._codex_processed_tasks:
+                        logger.info(
+                            f"Skipping Codex update for {len(self._codex_processed_tasks)} "
+                            f"tasks that were already done before this session"
+                        )
+                finally:
+                    session.close()
+                return  # Skip first iteration, start fresh on next loop
 
             # Get tasks that just completed (status = done, not yet processed)
             session = self.db.get_session()
