@@ -1242,6 +1242,22 @@ References: docs/system_design.md, docs/security_policy.md
             except Exception:
                 pass
 
+        # 2c. Show task description for first-time tasks
+        task_desc_section = ""
+        if not task_history:
+            task_desc_section = f"""
+
+**Title:** {task.title or 'Unknown'}
+
+**Requirements:**
+{task.description or '[No description provided in database]'}
+
+**Current Status:** `{task.status}`
+
+---
+
+"""
+
         # Extract relevant context from planning docs
         from core.context_extractor import extract_relevant_context
         relevant_context = extract_relevant_context(
@@ -1256,12 +1272,7 @@ References: docs/system_design.md, docs/security_policy.md
 
 # TASK: {task.id}
 
-**Task Description**:
-{task.description or '[Read from database]'}
-
-**Current Status**: `{task.status}`
-
-{task_history}{codex_section}
+{task_desc_section}{task_history}{codex_section}
 
 ## Relevant Planning Context
 
@@ -1700,12 +1711,53 @@ Without sys.exit(0), the process takes 30s-2min to shutdown, blocking other agen
             "security"
         )
 
+        # Read task log if exists
+        task_log_path = self.project_dir / ".relay" / "logs" / f"{task.id}.md"
+        task_history = ""
+        if task_log_path.exists():
+            try:
+                history_content = task_log_path.read_text()
+                # Cap at 2000 chars to avoid bloat
+                if len(history_content) > 2000:
+                    history_content = history_content[:2000] + "\n\n[... truncated, read full file for complete history]"
+                task_history = f"""
+
+## 📜 Task History
+
+{history_content}
+
+**Note:** This task has prior work. Read carefully to avoid repeating mistakes.
+
+---
+
+"""
+            except Exception:
+                pass
+
+        # Show task description for first-time tasks
+        task_desc_section = ""
+        if not task_history:
+            task_desc_section = f"""
+
+## 📋 Task Description
+
+**Title:** {task.title or 'Unknown'}
+
+**Requirements:**
+{task.description or '[No description provided]'}
+
+**Current Status:** `{task.status}`
+
+---
+
+"""
+
         return f"""# Security Review: {task.id}
 
 You are **{agent_name}** (Agent ID: `{agent_id}`) performing a security scan on task **{task.id}**.
 
 **NOTE**: This task has been assigned to you by the orchestrator. You have exclusive ownership.
-{vault_section}
+{task_desc_section}{task_history}{vault_section}
 ## Instructions
 
 1. **Read the complete task history from markdown log**:
