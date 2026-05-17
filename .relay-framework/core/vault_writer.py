@@ -53,6 +53,9 @@ async def update_vault(project_dir: Path, task_id: str, task_data: dict) -> bool
     """
     Update vault files after task completion.
 
+    NEW BEHAVIOR: First checks task log for agent-provided vault entry.
+    If found, uses that. Otherwise falls back to automated generation.
+
     Args:
         project_dir: Project directory
         task_id: Task ID (e.g., "BE-001")
@@ -69,6 +72,16 @@ async def update_vault(project_dir: Path, task_id: str, task_data: dict) -> bool
         logger.info(f"Vault doesn't exist yet at {vault_dir}. Skipping vault update for {task_id}.")
         logger.info("Run 'migrate_to_vault.py' to create vault structure.")
         return True  # Not an error, just skip
+
+    # Check if agent provided vault entry in task log
+    vault_entry = _extract_vault_entry_from_log(project_dir, task_id)
+
+    if vault_entry:
+        logger.info(f"Found agent-provided vault entry for {task_id}")
+        return await _apply_vault_entry(project_dir, vault_dir, task_id, vault_entry, task_data)
+
+    # Fall back to automated vault update (old behavior)
+    logger.info(f"No agent vault entry found, using automated update for {task_id}")
 
     # Determine which vault files to update
     vault_files = _determine_vault_files(task_data)
@@ -394,6 +407,167 @@ def _update_changelog(
 
     except Exception as e:
         logger.error(f"Failed to update changelog: {e}")
+
+
+def _extract_vault_entry_from_log(project_dir: Path, task_id: str) -> Optional[dict]:
+    """
+    Extract vault entry from agent's task log.
+
+    Looks for section: "### 📝 Vault Entry"
+
+    Args:
+        project_dir: Project directory
+        task_id: Task ID
+
+    Returns:
+        Dict with {file, entry, action, description} or None
+    """
+    log_path = project_dir / ".relay" / "logs" / f"{task_id}.md"
+
+    if not log_path.exists():
+        return None
+
+    try:
+        content = log_path.read_text()
+
+        # Look for vault entry section
+        if "### 📝 Vault Entry" not in content:
+            return None
+
+        # Extract the section
+        import re
+        pattern = r"### 📝 Vault Entry.*?\n(.*?)(?:\n###|\n---|\Z)"
+        match = re.search(pattern, content, re.DOTALL)
+
+        if not match:
+            return None
+
+        section = match.group(1).strip()
+
+        # Parse fields
+        file_match = re.search(r"\*\*File:\*\*\s*(.+)", section)
+        entry_match = re.search(r"\*\*Entry:\*\*\s*(.+)", section)
+        action_match = re.search(r"\*\*Action:\*\*\s*(.+)", section)
+        desc_match = re.search(r"\*\*File Description:\*\*\s*(.+)", section)
+
+        if not file_match or not entry_match:
+            logger.warning(f"Incomplete vault entry in {task_id} log")
+            return None
+
+        return {
+            "file": file_match.group(1).strip(),
+            "entry": entry_match.group(1).strip(),
+            "action": action_match.group(1).strip() if action_match else "UPDATE",
+            "description": desc_match.group(1).strip() if desc_match else None,
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to extract vault entry from {task_id} log: {e}")
+        return None
+
+
+async def _apply_vault_entry(
+    project_dir: Path,
+    vault_dir: Path,
+    task_id: str,
+    vault_entry: dict,
+    task_data: dict
+) -> bool:
+    """
+    Apply agent-provided vault entry.
+
+    Args:
+        project_dir: Project directory
+        vault_dir: Vault directory
+        task_id: Task ID
+        vault_entry: Dict with file, entry, action, description
+        task_data: Task data
+
+    Returns:
+        True if successful
+    """
+    vault_file = vault_entry["file"]
+    entry = vault_entry["entry"]
+    action = vault_entry.get("action", "UPDATE")
+
+    vault_file_path = vault_dir / vault_file
+
+    try:
+        if action == "CREATE_NEW_FILE":
+            # Create new vault file
+            vault_file_path.parent.mkdir(parents=True, exist_ok=True)
+
+            file_title = vault_file.split("/")[1].replace("-", " ").replace(".md", "").title()
+            content = f"""# {file_title}
+
+**Last Updated:** {datetime.now().strftime("%Y-%m-%d")}
+
+## Entries
+
+- {entry}
+"""
+            vault_file_path.write_text(content)
+            logger.info(f"Created new vault file: {vault_file}")
+
+            # Update domain index
+            domain = vault_file.split("/")[0]
+            index_path = vault_dir / domain / "index.md"
+
+            if index_path.exists():
+                index_content = index_path.read_text()
+                filename = vault_file.split("/")[1]
+                desc = vault_entry.get("description", "Documentation")
+
+                # Add to ## Files section
+                new_line = f"- [{filename}]({filename}) - {desc}\n"
+
+                if "## Files" in index_content:
+                    # Insert after ## Files line
+                    lines = index_content.split("\n")
+                    insert_idx = None
+                    for i, line in enumerate(lines):
+                        if line.startswith("## Files"):
+                            insert_idx = i + 2  # Skip ## Files and blank line
+                            break
+
+                    if insert_idx:
+                        lines.insert(insert_idx, new_line.rstrip())
+                        index_path.write_text("\n".join(lines))
+                        logger.info(f"Updated {domain}/index.md with new file reference")
+
+        else:
+            # Update existing file
+            if not vault_file_path.exists():
+                logger.warning(f"Vault file {vault_file} doesn't exist, creating it")
+                vault_file_path.parent.mkdir(parents=True, exist_ok=True)
+                file_title = vault_file.split("/")[1].replace("-", " ").replace(".md", "").title()
+                content = f"""# {file_title}
+
+**Last Updated:** {datetime.now().strftime("%Y-%m-%d")}
+
+## Entries
+
+- {entry}
+"""
+                vault_file_path.write_text(content)
+            else:
+                # Append entry
+                content = vault_file_path.read_text()
+                if not content.endswith("\n"):
+                    content += "\n"
+                content += f"- {entry}\n"
+                vault_file_path.write_text(content)
+
+            logger.info(f"Updated vault file: {vault_file}")
+
+        # Update changelog
+        _update_changelog(vault_dir, task_id, task_data, [vault_file])
+
+        return True
+
+    except Exception as e:
+        logger.error(f"Failed to apply vault entry for {task_id}: {e}")
+        return False
 
 
 def should_update_vault(task_data: dict) -> bool:

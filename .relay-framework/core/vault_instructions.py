@@ -217,56 +217,68 @@ No specific vault file identified for this task. If you create something signifi
         return f"""
 ## Vault Update (After Task Completion)
 
-**REQUIRED:** After completing this task, update the vault with what you built.
+**REQUIRED:** After completing this task, write your vault entry to the task log.
 
-**File to update:** `.relay/vault/{vault_file}`
+**File that will be updated:** `.relay/vault/{vault_file}` (exists)
 
-**Action:** Add ONE LINE to this file documenting what you created/modified.
+**Your responsibility:** At the END of your task log (`.relay/logs/{{task_id}}.md`), add this section:
+
+```markdown
+### 📝 Vault Entry
+
+**File:** {vault_file}
+**Entry:** [Your ONE LINE entry here following the format below]
+```
 
 {format_instructions}
 
-**Steps:**
-1. Read `.relay/vault/{vault_file}` to see existing entries
-2. Append your ONE LINE entry at the end (do not modify existing lines)
-3. Follow the format exactly as shown in examples above
-4. Use present tense: "Creates", "Returns", "Validates" (not "Will create")
+**Important:**
+- ONE LINE only - ultra-concise
+- Present tense: "Creates", "Returns", "Validates" (not "Will create")
+- Include what + how in 5-10 words max
 
 **Example entry for your task:**
-[Your implementation] - [What it does], [key implementation detail in 1-2 words]
+`POST /api/auth/login` - Validates email/password, returns JWT + refresh token or 401
+
+**How it works:**
+1. You write the entry to your task log
+2. Vault writer (automated) reads your entry and appends to `.relay/vault/{vault_file}`
+3. Vault stays up-to-date without you directly editing it
 """
     else:
         return f"""
 ## Vault Update (After Task Completion)
 
-**REQUIRED:** After completing this task, create a new vault file + update index.
+**REQUIRED:** After completing this task, write your vault entry to the task log.
 
-**File to create:** `.relay/vault/{vault_file}`
+**File that will be created:** `.relay/vault/{vault_file}` (doesn't exist yet)
 
-**This file doesn't exist yet!** You'll need to:
+**Your responsibility:** At the END of your task log (`.relay/logs/{{task_id}}.md`), add this section:
 
-1. **Create the file** at `.relay/vault/{vault_file}` with:
-   - Header: `# {vault_file.split('/')[1].replace('-', ' ').replace('.md', '').title()}`
-   - Format note: {format_instructions.strip()}
-   - Your ONE LINE entry
-
-2. **Update the domain index** at `.relay/vault/{domain}/index.md`:
-   - Add a line under "## Files" section:
-   - `- [{vault_file.split('/')[1]}]({vault_file.split('/')[1]}) - [Brief description of what this file tracks]`
-
-**Template for new file:**
 ```markdown
-# {vault_file.split('/')[1].replace('-', ' ').replace('.md', '').title()}
+### 📝 Vault Entry (New File)
 
-**Last Updated:** {Path.cwd().name} - YYYY-MM-DD
-{format_instructions.strip()}
-
-## Entries
-
-- [Your one-line entry here]
+**File:** {vault_file}
+**Action:** CREATE_NEW_FILE
+**Entry:** [Your ONE LINE entry here following the format below]
+**File Description:** [One sentence describing what this file will track]
 ```
 
+{format_instructions}
+
+**Important:**
+- ONE LINE only - ultra-concise
+- Present tense: "Creates", "Returns", "Validates"
+- Include what + how in 5-10 words max
+
 **Example entry for your task:**
-[Your implementation] - [What it does], [key implementation detail in 1-2 words]
+Sentry error rate alert - Triggers when >5 errors/min, sends Slack notification to #alerts
+
+**How it works:**
+1. You write the entry + file description to your task log
+2. Vault writer (automated) creates `.relay/vault/{vault_file}` with proper header
+3. Vault writer updates `.relay/vault/{domain}/index.md` to reference new file
+4. You don't directly edit vault files - the system handles it
 """
 
 
