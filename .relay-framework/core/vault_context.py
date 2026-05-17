@@ -4,51 +4,49 @@ Vault Context Manager
 
 Provides targeted context injection from vault files based on agent role and task.
 Replaces monolithic codex injection with domain-specific vault files.
+
+Now includes smart filtering: extracts only relevant sections based on task keywords.
 """
 
 import logging
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
 
 # Role-specific vault file mappings
+# NOTE: Planning docs are NOT injected (too large), only vault implementation docs
+# Planning docs available at: .relay/vault/planning/ (agent can read if needed)
 ROLE_VAULT_FILES = {
     "backend_developer": [
-        "planning/system_design.md",
-        "planning/security_policy.md",
+        "architecture/tech-stack.md",
         "architecture/database-schema.md",
         "backend/api-endpoints.md",
         "backend/services.md",
         "security/authentication.md",
     ],
     "frontend_developer": [
-        "planning/system_design.md",
-        "planning/ui_standards.md",
+        "architecture/tech-stack.md",
         "frontend/pages.md",
         "frontend/components.md",
         "backend/api-endpoints.md",  # Frontend needs to know API contracts
     ],
     "qa": [
-        "planning/system_design.md",
-        "planning/security_policy.md",
         "backend/api-endpoints.md",
         "frontend/pages.md",
     ],
     "security": [
-        "planning/security_policy.md",
         "security/authentication.md",
         "backend/api-endpoints.md",
         "integrations/integrations.md",
     ],
     "database": [
-        "planning/system_design.md",
+        "architecture/tech-stack.md",
         "architecture/database-schema.md",
         "backend/services.md",
     ],
     "devops": [
-        "planning/system_design.md",
         "architecture/tech-stack.md",
         "integrations/integrations.md",
     ],
@@ -122,26 +120,28 @@ class VaultContextManager:
         # Remove duplicates, preserve order
         vault_files = list(dict.fromkeys(vault_files))
 
-        # Read and combine vault files
-        context_parts = []
-
+        # Read vault files
+        vault_contents: List[Tuple[str, str]] = []
         for vault_file in vault_files:
             content = self._read_vault_file(vault_file)
             if content:
-                context_parts.append(f"## {vault_file}\n\n{content}")
+                vault_contents.append((vault_file, content))
 
-        if not context_parts:
+        if not vault_contents:
             logger.warning(f"No vault context found for role={role}")
             return ""
 
-        combined = "\n\n---\n\n".join(context_parts)
-        token_estimate = len(combined.split())
+        # Apply smart filtering based on task keywords
+        from .vault_filter import get_filtered_vault_context
+        filtered = get_filtered_vault_context(vault_contents, task_description)
+
+        token_estimate = len(filtered.split())
 
         logger.info(
-            f"Vault context for {role}: {len(vault_files)} files, ~{token_estimate} tokens"
+            f"Vault context for {role}: {len(vault_files)} files, ~{token_estimate} tokens (filtered)"
         )
 
-        return combined
+        return filtered
 
     def _get_vault_files_for_role(self, role: str) -> List[str]:
         """Get base vault files for agent role."""

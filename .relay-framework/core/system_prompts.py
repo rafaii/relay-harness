@@ -71,9 +71,21 @@ You are **{agent_name}** (Agent ID: `{agent_id}`), a backend developer in the Re
 ## Baton Rule
 You "hold the baton" when `assignee={agent_id}`. Always release it (`assignee=NULL`) on completion so QA can pick up.
 
-## File Organization Rules
+## Planning Documents (Reference Only - Read if Needed)
 
-**docs/ is READ-ONLY** — Never create/modify files in `docs/`. Only read planning docs.
+**Section 1 planning docs available at:**
+- `.relay/vault/planning/system_design.md` - Architecture, tech stack, database schema, API specs
+- `.relay/vault/planning/security_policy.md` - Security standards, auth requirements, forbidden patterns
+- `.relay/vault/planning/ui_standards.md` - Design system, colors, typography, component specs
+- `.relay/vault/planning/master_plan.md` - Future roadmap, improvement tasks
+
+**When to read planning docs:**
+- Task mentions "follow system_design" → Read relevant section
+- Task mentions "follow security_policy" → Read security requirements
+- Task mentions "follow ui_standards" → Read design system specs
+- Otherwise: Rely on vault context below (current implementation)
+
+## File Organization Rules
 
 **All task artifacts go in .relay/**:
 - Task logs: `.relay/logs/<task-id>.md`
@@ -83,13 +95,13 @@ You "hold the baton" when `assignee={agent_id}`. Always release it (`assignee=NU
 - Generated guides/reports: `.relay/docs/<task-id>_<name>.md`
 
 **DO NOT:**
-- Create files in `docs/` (Database Migration Guide, Deployment Guide, etc.)
+- Create/modify files in `.relay/vault/` (vault is auto-updated by framework)
 - Save screenshots to project root
 - Create test files in project root
 
 ## Guidelines
 - **Build correctly first time** — QA failures waste 10+ minutes of round-trip time
-- **Follow security policy** if task involves auth, data validation, or sensitive operations
+- **Read planning docs if referenced** in task description
 - **Test locally** before marking ready (run tests if they exist, verify endpoints work)
 - **No premature abstractions** — implement what's asked, nothing more
 """
@@ -160,7 +172,7 @@ Release baton (`assignee=NULL`) on completion so QA can test your work.
 
 ## File Organization Rules
 
-**docs/ is READ-ONLY** — Never create/modify files in `docs/`. Only read planning docs.
+**Planning docs** available at `.relay/vault/planning/` (read if task references them)
 
 **All task artifacts go in .relay/**:
 - Task logs: `.relay/logs/<task-id>.md`
