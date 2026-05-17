@@ -21,7 +21,8 @@ class ContextExtractor:
 
     def __init__(self, project_dir: Path):
         self.project_dir = Path(project_dir)
-        self.docs_dir = project_dir / "docs"
+        # Read from vault/planning instead of legacy docs/ folder
+        self.docs_dir = project_dir / ".relay" / "vault" / "planning"
 
     def get_relevant_context(
         self,
@@ -54,7 +55,7 @@ class ContextExtractor:
                 max_sections=max_sections
             )
             if sections:
-                context_parts.append("## docs/system_design.md\n")
+                context_parts.append("## planning/system_design.md\n")
                 context_parts.extend(sections)
 
         # Include security_policy.md for security-sensitive tasks
@@ -67,7 +68,7 @@ class ContextExtractor:
                     max_sections=3
                 )
                 if sections:
-                    context_parts.append("\n## docs/security_policy.md\n")
+                    context_parts.append("\n## planning/security_policy.md\n")
                     context_parts.extend(sections)
 
         # Include ui_standards.md for frontend tasks
@@ -80,17 +81,20 @@ class ContextExtractor:
                     max_sections=4
                 )
                 if sections:
-                    context_parts.append("\n## docs/ui_standards.md\n")
+                    context_parts.append("\n## planning/ui_standards.md\n")
                     context_parts.extend(sections)
 
         # If no sections matched, return a summary note
         if not context_parts:
+            vault_files = [".relay/vault/planning/system_design.md"]
+            if self._is_security_sensitive(task_description):
+                vault_files.append(".relay/vault/planning/security_policy.md")
+            if 'frontend' in task_role.lower():
+                vault_files.append(".relay/vault/planning/ui_standards.md")
+
             return (
                 "**Note:** No specific sections matched task keywords. "
-                "Read full planning docs if needed:\n"
-                f"  - {system_design}\n"
-                f"  - {security_policy if self._is_security_sensitive(task_description) else ''}\n"
-                f"  - {ui_standards if 'frontend' in task_role.lower() else ''}\n"
+                f"Read full planning docs if needed: {', '.join(vault_files)}\n"
             )
 
         return "\n".join(context_parts)

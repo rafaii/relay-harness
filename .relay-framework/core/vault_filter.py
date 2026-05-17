@@ -75,6 +75,68 @@ VAULT_FILE_SECTIONS = {
             "webhook": ["Webhooks"],
         }
     },
+    "backend/services.md": {
+        "patterns": [r"^##\s+(.+)$"],  # ## Core Services
+        "keywords_map": {
+            "auth": ["Auth"],
+            "business": ["Business"],
+            "contact": ["Contact"],
+            "conversation": ["Conversation"],
+            "agent": ["Agent", "HITL"],
+            "whatsapp": ["WhatsApp"],
+            "stripe": ["Stripe"],
+            "cache": ["Cache"],
+        }
+    },
+    "architecture/database-schema.md": {
+        "patterns": [r"^##\s+(.+)$", r"^###\s+(.+)$"],  # ## and ### headers
+        "keywords_map": {
+            "user": ["users"],
+            "business": ["businesses"],
+            "contact": ["contacts", "companies"],
+            "conversation": ["conversations", "messages"],
+            "deal": ["deals"],
+            "agent": ["agent_audit", "hitl_approvals"],
+            "integration": ["integration_channels"],
+            "subscription": ["subscriptions"],
+        }
+    },
+    "security/authentication.md": {
+        "patterns": [r"^##\s+(.+)$"],  # ## JWT Authentication
+        "keywords_map": {
+            "jwt": ["JWT"],
+            "oauth": ["OAuth2"],
+            "mfa": ["Multi-Factor", "MFA"],
+            "password": ["Password"],
+            "admin": ["Admin"],
+            "api": ["API Key"],
+            "csrf": ["CSRF"],
+            "rate": ["Rate Limiting"],
+        }
+    },
+    "frontend/pages.md": {
+        "patterns": [r"^##\s+(.+)$"],  # ## Auth Pages
+        "keywords_map": {
+            "auth": ["Auth Pages"],
+            "onboarding": ["Onboarding"],
+            "dashboard": ["Dashboard"],
+            "crm": ["CRM"],
+            "inbox": ["Inbox"],
+            "agent": ["Agents"],
+            "calendar": ["Calendar"],
+            "admin": ["Admin"],
+        }
+    },
+    "frontend/components.md": {
+        "patterns": [r"^##\s+(.+)$"],  # ## Form Components
+        "keywords_map": {
+            "form": ["Form"],
+            "button": ["Button"],
+            "modal": ["Modal"],
+            "table": ["Table"],
+            "chart": ["Chart"],
+        }
+    },
 }
 
 
@@ -104,6 +166,11 @@ def filter_vault_file(content: str, filename: str, task_keywords: Set[str]) -> s
     """
     Filter vault file content to only relevant sections based on task keywords.
 
+    Uses GENERIC filtering for all files:
+    - Parses markdown headers (## and ###)
+    - Checks if header or section content contains task keywords
+    - Returns only matching sections
+
     Args:
         content: Full vault file content
         filename: Vault file name (e.g., "architecture/tech-stack.md")
@@ -112,31 +179,30 @@ def filter_vault_file(content: str, filename: str, task_keywords: Set[str]) -> s
     Returns:
         Filtered content with only relevant sections
     """
-    if not task_keywords or filename not in VAULT_FILE_SECTIONS:
-        # No filtering config for this file, return trimmed version (first 500 lines)
+    if not task_keywords:
+        # No task keywords, return first 50 lines
         lines = content.split("\n")
-        if len(lines) > 500:
-            return "\n".join(lines[:500]) + f"\n\n[... {len(lines) - 500} lines truncated. Read full file if needed: .relay/vault/{filename}]"
+        if len(lines) > 50:
+            return "\n".join(lines[:50]) + f"\n\n[... {len(lines) - 50} lines truncated. Read full file if needed: .relay/vault/{filename}]"
         return content
 
-    config = VAULT_FILE_SECTIONS[filename]
-    keywords_map = config["keywords_map"]
+    # Try custom filtering first (for complex patterns)
+    if filename in VAULT_FILE_SECTIONS:
+        config = VAULT_FILE_SECTIONS[filename]
+        keywords_map = config["keywords_map"]
 
-    # Find which sections are relevant
-    relevant_section_names = set()
-    for keyword in task_keywords:
-        if keyword in keywords_map:
-            relevant_section_names.update(keywords_map[keyword])
+        # Find which sections are relevant
+        relevant_section_names = set()
+        for keyword in task_keywords:
+            if keyword in keywords_map:
+                relevant_section_names.update(keywords_map[keyword])
 
-    if not relevant_section_names:
-        # No relevant sections, return summary only (first 200 lines)
-        lines = content.split("\n")
-        if len(lines) > 200:
-            return "\n".join(lines[:200]) + f"\n\n[... Not relevant to task. Read full file if needed: .relay/vault/{filename}]"
-        return content
+        if relevant_section_names:
+            # Extract relevant sections using custom patterns
+            return _extract_sections(content, relevant_section_names, config["patterns"])
 
-    # Extract relevant sections
-    return _extract_sections(content, relevant_section_names, config["patterns"])
+    # Fall back to GENERIC keyword-based filtering
+    return _generic_filter(content, filename, task_keywords)
 
 
 def _extract_sections(content: str, target_sections: Set[str], section_patterns: List[str]) -> str:
@@ -229,3 +295,85 @@ def get_filtered_vault_context(vault_files: List[tuple], task_description: str) 
     logger.info(f"Total vault context: {total_lines_before} → {total_lines_after} lines ({100 * total_lines_after // total_lines_before if total_lines_before > 0 else 0}%)")
 
     return "\n\n---\n\n".join(filtered_parts)
+
+
+def _generic_filter(content: str, filename: str, task_keywords: Set[str]) -> str:
+    """
+    Generic keyword-based filtering for ANY markdown file.
+
+    Strategy:
+    1. Parse all markdown sections (## and ### headers)
+    2. Check if section header OR section content contains task keywords
+    3. Return only matching sections
+
+    Args:
+        content: Full file content
+        filename: File name for logging
+        task_keywords: Task keywords to match
+
+    Returns:
+        Filtered content with only relevant sections
+    """
+    lines = content.split("\n")
+    sections = []
+    current_section = None
+    current_section_lines = []
+
+    for line in lines:
+        # Check if this is a section header (## or ###)
+        if line.startswith("##"):
+            # Save previous section
+            if current_section:
+                sections.append({
+                    "header": current_section,
+                    "content": "\n".join(current_section_lines)
+                })
+
+            # Start new section
+            current_section = line
+            current_section_lines = [line]
+        elif current_section:
+            current_section_lines.append(line)
+
+    # Save last section
+    if current_section:
+        sections.append({
+            "header": current_section,
+            "content": "\n".join(current_section_lines)
+        })
+
+    # Filter sections by keyword match
+    relevant_sections = []
+
+    for section in sections:
+        header_lower = section["header"].lower()
+        content_lower = section["content"].lower()
+
+        # Check if any task keyword appears in header or content
+        matches = False
+        for keyword in task_keywords:
+            if keyword in header_lower or keyword in content_lower:
+                matches = True
+                break
+
+        if matches:
+            relevant_sections.append(section["content"])
+
+    if not relevant_sections:
+        # No sections matched - return just headers (table of contents style)
+        headers = [s["header"] for s in sections[:10]]  # First 10 headers
+        result = "\n".join(headers)
+        if len(sections) > 10:
+            result += f"\n\n[... {len(sections) - 10} more sections. Read full file if needed: .relay/vault/{filename}]"
+        result += f"\n\n**No sections matched task keywords.** Read full file if needed: `.relay/vault/{filename}`"
+        return result
+
+    # Return matched sections
+    result = "\n\n".join(relevant_sections)
+    matched_count = len(relevant_sections)
+    total_count = len(sections)
+
+    if matched_count < total_count:
+        result += f"\n\n[Showing {matched_count}/{total_count} relevant sections. Read full file for other sections: `.relay/vault/{filename}`]"
+
+    return result
