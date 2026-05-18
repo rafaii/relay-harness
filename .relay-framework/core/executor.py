@@ -12,6 +12,7 @@ Manages the main execution loop for task completion with:
 
 import asyncio
 import logging
+import yaml
 from pathlib import Path
 from typing import List, Optional
 from datetime import datetime
@@ -74,6 +75,10 @@ class Executor:
         self.use_dashboard = use_dashboard
         self.dashboard = CLIDashboard() if use_dashboard else None
 
+        # Vault writer queue (single-worker queue to serialize vault writes)
+        self.vault_queue = asyncio.Queue(maxsize=10)
+        self.vault_worker_task = None
+
         logger.info(f"Executor initialized: project_dir={project_dir}, max_concurrency={max_concurrency}")
 
     def shutdown(self):
@@ -81,6 +86,51 @@ class Executor:
         logger.info("Shutdown requested")
         self.shutdown_requested = True
         self.spawner.terminate_all()
+
+        # Cancel vault writer worker
+        if self.vault_worker_task and not self.vault_worker_task.done():
+            self.vault_worker_task.cancel()
+
+    async def _vault_writer_worker(self):
+        """
+        Background worker that processes vault writes from queue.
+
+        Ensures only one vault write happens at a time (vault writes are 10-30s Claude subprocess calls).
+        """
+        logger.info("Vault writer worker started")
+
+        while not self.shutdown_requested:
+            try:
+                # Wait for vault write request (timeout to check shutdown periodically)
+                task_id, task_data = await asyncio.wait_for(
+                    self.vault_queue.get(),
+                    timeout=5.0
+                )
+
+                logger.info(f"Processing vault write for task {task_id} (queue size: {self.vault_queue.qsize()})")
+
+                # Perform the vault update (this is the slow part - 10-30 seconds)
+                from core.vault_writer import update_vault
+                success = await update_vault(self.project_dir, task_id, task_data)
+
+                if success:
+                    logger.info(f"✅ Vault updated for {task_id}")
+                else:
+                    logger.warning(f"⚠️  Vault update failed for {task_id}")
+
+                # Mark task as done in queue
+                self.vault_queue.task_done()
+
+            except asyncio.TimeoutError:
+                # No items in queue, continue loop
+                continue
+            except asyncio.CancelledError:
+                logger.info("Vault writer worker cancelled")
+                break
+            except Exception as e:
+                logger.error(f"Error in vault writer worker: {e}", exc_info=True)
+
+        logger.info("Vault writer worker stopped")
 
     async def execute(self):
         """
@@ -99,6 +149,10 @@ class Executor:
         # Start the dashboard
         if self.dashboard:
             self.dashboard.start()
+
+        # Start vault writer worker
+        self.vault_worker_task = asyncio.create_task(self._vault_writer_worker())
+        logger.info("Vault writer worker task created")
 
         iteration = 0
         last_cleanup = datetime.now()
@@ -130,6 +184,9 @@ class Executor:
 
                     # 1.7. Terminate slow-exit processes (released baton but still running >15s)
                     self._terminate_slow_exit_processes()
+
+                    # 1.8. Update retry counters for newly failed tasks
+                    self._update_retry_counters()
 
                     # 2. Process QA gate
                     await self._process_qa_gate()
@@ -295,12 +352,12 @@ class Executor:
                     self._vault_processed_tasks = {task.id for task in already_done}
                     if self._vault_processed_tasks:
                         logger.info(
-                            f"Skipping vault update for {len(self._vault_processed_tasks)} "
+                            f"Initialized vault tracking with {len(self._vault_processed_tasks)} "
                             f"tasks that were already done before this session"
                         )
                 finally:
                     session.close()
-                return  # Skip first iteration, start fresh on next loop
+                # Don't return early - continue to process any newly completed tasks
 
             # Get tasks that just completed (status = done, not yet processed)
             session = self.db.get_session()
@@ -334,13 +391,13 @@ class Executor:
                             self._vault_processed_tasks.add(task.id)
                             continue
 
-                        success = await update_vault(self.project_dir, task.id, task_data)
-
-                        if success:
+                        # Queue vault update (don't await - worker will process it)
+                        try:
+                            self.vault_queue.put_nowait((task.id, task_data))
                             self._vault_processed_tasks.add(task.id)
-                            logger.info(f"✅ Vault updated for {task.id}")
-                        else:
-                            logger.warning(f"⚠️  Vault update failed for {task.id} (will retry next iteration)")
+                            logger.info(f"Queued vault update for {task.id} (queue size: {self.vault_queue.qsize()})")
+                        except asyncio.QueueFull:
+                            logger.warning(f"⚠️  Vault queue full, will retry {task.id} next iteration")
                     else:
                         logger.warning(f"Vault directory not found at {vault_dir}. Run 'python3 .relay-framework/tools/migrate_to_vault.py .' to create vault structure.")
                         self._vault_processed_tasks.add(task.id)  # Skip this task
@@ -350,6 +407,75 @@ class Executor:
 
         except Exception as e:
             logger.error(f"Failed to update codex for completed tasks: {e}")
+
+    def _load_devops_tasks_template(self) -> list:
+        """
+        Load DevOps tasks from YAML template file.
+        Falls back to embedded defaults if template file is missing.
+
+        Returns:
+            List of task dictionaries
+        """
+        template_path = Path(__file__).parent.parent / "templates" / "devops_tasks.yaml"
+
+        try:
+            if template_path.exists():
+                with open(template_path, 'r') as f:
+                    data = yaml.safe_load(f)
+                    logger.info(f"Loaded {len(data['tasks'])} DevOps tasks from {template_path}")
+                    return data['tasks']
+            else:
+                logger.warning(f"DevOps tasks template not found at {template_path}, using embedded defaults")
+                return self._get_embedded_devops_tasks()
+        except Exception as e:
+            logger.error(f"Failed to load DevOps tasks template: {e}, using embedded defaults")
+            return self._get_embedded_devops_tasks()
+
+    def _get_embedded_devops_tasks(self) -> list:
+        """
+        Embedded DevOps tasks as fallback when template file is missing.
+
+        Returns:
+            List of task dictionaries
+        """
+        return [
+            {
+                "id": "DEVOPS-001",
+                "title": "Create Dockerfile for application",
+                "description": "Create Docker containerization setup (see template for full details)",
+                "phase": "devops",
+                "role": "devops_developer",
+                "agent_type": "devops",
+                "dependencies": [],
+                "priority": 0,
+                "complexity": 3,
+                "status": "todo"
+            },
+            {
+                "id": "DEVOPS-002",
+                "title": "Setup CI/CD pipeline",
+                "description": "Create continuous integration and deployment pipeline (see template for full details)",
+                "phase": "devops",
+                "role": "devops_developer",
+                "agent_type": "devops",
+                "dependencies": ["DEVOPS-001"],
+                "priority": 0,
+                "complexity": 3,
+                "status": "todo"
+            },
+            {
+                "id": "DEVOPS-003",
+                "title": "Create environment configuration files",
+                "description": "Setup environment configuration for different deployment environments (see template for full details)",
+                "phase": "devops",
+                "role": "devops_developer",
+                "agent_type": "devops",
+                "dependencies": [],
+                "priority": 0,
+                "complexity": 2,
+                "status": "todo"
+            }
+        ]
 
     def _check_devops_trigger(self):
         """
@@ -398,168 +524,8 @@ class Executor:
                 # All development complete - create DevOps tasks
                 logger.info("Development phases complete! Creating DevOps phase...")
 
-                devops_tasks = [
-                    {
-                        "id": "DEVOPS-001",
-                        "title": "Create Dockerfile for application",
-                        "description": """Create Docker containerization setup for the application.
-
-**Requirements:**
-1. Review project structure and tech stack from docs/system_design.md
-2. Create Dockerfile(s):
-   - Frontend: If separate frontend app, create frontend/Dockerfile
-   - Backend: Create backend/Dockerfile or root Dockerfile
-   - Multi-stage builds for optimization
-
-3. Dockerfile must include:
-   - Appropriate base image (node:18-alpine, python:3.11-slim, etc.)
-   - Dependency installation
-   - Build steps
-   - Production optimizations (layer caching, minimal image size)
-   - Non-root user for security
-   - Health check endpoint
-
-4. Create .dockerignore to exclude:
-   - node_modules, .git, .env, logs, temp files
-   - Development-only files
-
-5. Create docker-compose.yml for local development:
-   - Application service(s)
-   - Database service (if needed)
-   - Volume mounts for development
-   - Environment variables
-   - Network configuration
-
-6. Test locally:
-   - Build images successfully
-   - Run containers
-   - Verify application works
-   - Check image size (optimize if >500MB)
-
-**Acceptance Criteria:**
-- Dockerfile builds without errors
-- Application runs in container
-- docker-compose up starts all services
-- Documentation in README for Docker usage
-
-References: docs/system_design.md
-""",
-                        "phase": "devops",
-                        "role": "devops_developer",
-                        "agent_type": "devops",
-                        "dependencies": [],
-                        "priority": 0,
-                        "complexity": 3,
-                        "status": "todo"
-                    },
-                    {
-                        "id": "DEVOPS-002",
-                        "title": "Setup CI/CD pipeline",
-                        "description": """Create continuous integration and deployment pipeline.
-
-**Requirements:**
-1. Choose CI/CD platform:
-   - GitHub Actions (if on GitHub)
-   - GitLab CI (if on GitLab)
-   - CircleCI, Travis, Jenkins (alternatives)
-
-2. Create workflow files:
-   - `.github/workflows/ci.yml` (for GitHub Actions)
-   - Or equivalent for chosen platform
-
-3. CI pipeline must include:
-   - Checkout code
-   - Install dependencies
-   - Run linters/formatters
-   - Run tests
-   - Build application
-   - Security scanning (npm audit, Snyk, etc.)
-
-4. CD pipeline (optional, for staging):
-   - Deploy to staging environment
-   - Run smoke tests
-   - Notify on deployment
-
-5. Pipeline triggers:
-   - On pull request: Run CI only
-   - On push to main: Run CI + CD
-   - Manual trigger option
-
-6. Test the pipeline:
-   - Create test PR
-   - Verify all checks pass
-   - Fix any failures
-
-**Acceptance Criteria:**
-- CI pipeline runs on every PR
-- All checks (lint, test, build) must pass
-- Clear status badges in README
-- Documentation for running locally
-
-References: docs/system_design.md
-""",
-                        "phase": "devops",
-                        "role": "devops_developer",
-                        "agent_type": "devops",
-                        "dependencies": ["DEVOPS-001"],
-                        "priority": 0,
-                        "complexity": 3,
-                        "status": "todo"
-                    },
-                    {
-                        "id": "DEVOPS-003",
-                        "title": "Create environment configuration files",
-                        "description": """Setup environment configuration for different deployment environments.
-
-**Requirements:**
-1. Create environment templates:
-   - `.env.example` - Template with all required vars
-   - `.env.development` - Local development defaults
-   - `.env.production.template` - Production template
-
-2. Document all environment variables in README:
-   - Variable name
-   - Purpose
-   - Default value (if any)
-   - Required vs optional
-   - Example values
-
-3. Setup environment loading:
-   - Use dotenv or equivalent
-   - Validate required env vars on startup
-   - Provide clear error messages for missing vars
-
-4. Security considerations:
-   - Never commit actual .env files
-   - Add .env to .gitignore
-   - Use secrets management for production (AWS Secrets Manager, etc.)
-   - Document secret rotation process
-
-5. Environment-specific configs:
-   - Database URLs
-   - API keys (examples only)
-   - Feature flags
-   - Logging levels
-   - CORS settings
-   - Port numbers
-
-**Acceptance Criteria:**
-- .env.example complete with all variables
-- Clear documentation in README
-- Application fails fast with clear errors if env vars missing
-- No secrets committed to git
-
-References: docs/system_design.md, docs/security_policy.md
-""",
-                        "phase": "devops",
-                        "role": "devops_developer",
-                        "agent_type": "devops",
-                        "dependencies": [],
-                        "priority": 0,
-                        "complexity": 2,
-                        "status": "todo"
-                    }
-                ]
+                # Load DevOps tasks from YAML template
+                devops_tasks = self._load_devops_tasks_template()
 
                 for task_data in devops_tasks:
                     self.db.create_task(task_data)
@@ -641,19 +607,57 @@ References: docs/system_design.md, docs/security_policy.md
                         f"Recovering task {task.id} from stale assignee: {task.assignee} "
                         f"(status: {task.status})"
                     )
+                    # Save original assignee before clearing
+                    original_assignee = task.assignee
                     task.assignee = None
                     session.commit()
 
-                    # Log recovery action
+                    # Log recovery action with original assignee
                     self.db.log_action(
                         task_id=task.id,
                         agent_id="system",
                         action="recovered",
-                        notes=f"Cleared stale assignee {task.assignee} - agent no longer running"
+                        notes=f"Cleared stale assignee {original_assignee} - agent no longer running"
                     )
 
         except Exception as e:
             logger.error(f"Error recovering stuck assignees: {e}", exc_info=True)
+        finally:
+            session.close()
+
+    def _update_retry_counters(self):
+        """
+        Update retry counters for tasks that have just failed.
+
+        Increments retry_count and sets last_failed_at for tasks with
+        status qa_failed or security_failed that haven't been updated yet.
+        """
+        session = self.db.get_session()
+        try:
+            from core.database import Task
+
+            # Find failed tasks that need retry counter updates
+            # (tasks where last_failed_at is None or older than updated_at)
+            failed_tasks = session.query(Task).filter(
+                Task.status.in_(["qa_failed", "security_failed"]),
+                Task.assignee.is_(None)
+            ).all()
+
+            for task in failed_tasks:
+                # Check if this is a NEW failure (last_failed_at is older than updated_at or None)
+                if not task.last_failed_at or task.last_failed_at < task.updated_at:
+                    task.retry_count += 1
+                    task.last_failed_at = datetime.now()
+
+                    logger.info(
+                        f"Task {task.id} failed (retry {task.retry_count}/5). "
+                        f"Next retry in {min(2 ** task.retry_count, 3600)}s"
+                    )
+
+                    session.commit()
+
+        except Exception as e:
+            logger.error(f"Error updating retry counters: {e}", exc_info=True)
         finally:
             session.close()
 
@@ -670,7 +674,10 @@ References: docs/system_design.md, docs/security_policy.md
         try:
             from core.database import Task
 
-            for agent_id, (process, task_id, start_time, log_handle) in list(self.spawner.running_agents.items()):
+            with self.spawner.running_agents_lock:
+                running_agents_copy = list(self.spawner.running_agents.items())
+
+            for agent_id, (process, task_id, start_time, log_handle) in running_agents_copy:
                 # Only check processes that have been running for at least 15 seconds
                 elapsed = (current_time - start_time).total_seconds()
                 if elapsed < 15:
@@ -702,7 +709,8 @@ References: docs/system_design.md, docs/security_policy.md
                         log_handle.close()
 
                     self.spawner._unregister_agent_from_db(agent_id)
-                    del self.spawner.running_agents[agent_id]
+                    with self.spawner.running_agents_lock:
+                        del self.spawner.running_agents[agent_id]
 
                     logger.info(f"Slow-exit process {agent_id} terminated - freeing concurrency slot")
 
@@ -930,6 +938,7 @@ References: docs/system_design.md, docs/security_policy.md
         - status in ["todo", "qa_failed", "security_failed"]
         - assignee is None
         - all dependencies are completed (status = "done")
+        - retry backoff period has elapsed (for failed tasks)
 
         Returns:
             List of ready tasks
@@ -943,8 +952,29 @@ References: docs/system_design.md, docs/security_policy.md
             ).order_by(Task.priority.desc()).all()
 
             ready = []
+            now = datetime.now()
 
             for task in tasks:
+                # Check if task has exceeded max retries
+                if task.retry_count >= 5:
+                    logger.warning(f"Task {task.id} exceeded max retries ({task.retry_count}), marking as permanently failed")
+                    task.status = "failed"  # Permanently failed
+                    session.commit()
+                    continue
+
+                # Check retry backoff for failed tasks
+                if task.last_failed_at and task.retry_count > 0:
+                    # Exponential backoff: 2^retry_count seconds, max 1 hour
+                    backoff_seconds = min(2 ** task.retry_count, 3600)
+                    elapsed = (now - task.last_failed_at).total_seconds()
+
+                    if elapsed < backoff_seconds:
+                        logger.debug(
+                            f"Task {task.id} in backoff period "
+                            f"(retry {task.retry_count}, {int(backoff_seconds - elapsed)}s remaining)"
+                        )
+                        continue
+
                 # Check dependencies using centralized method
                 if self._check_dependencies_complete(task, session):
                     ready.append(task)
@@ -1166,6 +1196,17 @@ References: docs/system_design.md, docs/security_policy.md
         from core.vault_instructions import get_vault_update_section
         vault_update_instructions = get_vault_update_section(task.description or "", self.project_dir)
 
+        # Count tokens for observability
+        from core.token_counter import count_prompt_components, format_token_report
+        token_counts = count_prompt_components(
+            system_prompt=system_prompt,
+            vault_context=vault_context,
+            planning_context=relevant_context,
+            task_history=task_history,
+            task_description=task.description or ""
+        )
+        logger.info(f"Generated prompt for {task.id} ({role}): {format_token_report(token_counts)}")
+
         return f"""{system_prompt}
 
 ---
@@ -1182,6 +1223,43 @@ References: docs/system_design.md, docs/security_policy.md
 
 **Note:** Read full files if needed: `.relay/vault/planning/system_design.md`, `.relay/vault/planning/security_policy.md`, `.relay/vault/planning/ui_standards.md`
 """
+
+    def _extract_recent_changes(self, task_log_content: str) -> str:
+        """
+        Extract the most recent development work from task log.
+
+        Looks for the last "Development Completed" section to show QA
+        what the developer just did.
+
+        Args:
+            task_log_content: Full task log content
+
+        Returns:
+            Recent changes summary or empty string
+        """
+        # Look for last "Development Completed" or "Development Started" section
+        lines = task_log_content.split('\n')
+        recent_section = []
+        in_recent_section = False
+
+        # Scan backwards to find the most recent dev work
+        for i in range(len(lines) - 1, -1, -1):
+            line = lines[i]
+
+            # Found end of a section (next section's header)
+            if line.startswith('###') and in_recent_section:
+                break
+
+            # Found development completed section
+            if 'Development Completed' in line or 'Development Started' in line:
+                in_recent_section = True
+
+            if in_recent_section:
+                recent_section.insert(0, line)
+
+        if recent_section:
+            return '\n'.join(recent_section[:30])  # Limit to 30 lines
+        return ""
 
     def _generate_qa_prompt(self, task: Task, agent_id: str, agent_name: str) -> str:
         """
@@ -1224,16 +1302,35 @@ References: docs/system_design.md, docs/security_policy.md
                 "Run 'python3 .relay-framework/tools/migrate_to_vault.py .' to create vault."
             )
 
-        # 2b. Read task log
+        # 2b. Read task log and extract recent changes
         task_log_path = self.project_dir / ".relay" / "logs" / f"{task.id}.md"
         task_history = ""
+        recent_changes_section = ""
+
         if task_log_path.exists():
             try:
                 history_content = task_log_path.read_text()
+
+                # Extract recent developer changes for QA to review
+                recent_changes = self._extract_recent_changes(history_content)
+                if recent_changes:
+                    recent_changes_section = f"""
+## 🔨 Recently Completed Changes (from previous developer)
+
+The developer agent just completed this task and made the following changes:
+
+{recent_changes}
+
+**Your job:** Verify these changes work correctly and meet the acceptance criteria.
+
+---
+"""
+
+                # Full history for context
                 if len(history_content) > 2000:
                     history_content = history_content[:2000] + "\n\n[... truncated]"
                 task_history = f"""
-## 📜 Task History
+## 📜 Full Task History
 
 {history_content}
 
@@ -1266,199 +1363,28 @@ References: docs/system_design.md, docs/security_policy.md
             "qa"
         )
 
+        # Count tokens for observability
+        from core.token_counter import count_prompt_components, format_token_report
+        token_counts = count_prompt_components(
+            system_prompt=system_prompt,
+            vault_context=vault_context,
+            planning_context=relevant_context,
+            task_history=task_history,
+            task_description=task.description or ""
+        )
+        logger.info(f"Generated QA prompt for {task.id}: {format_token_report(token_counts)}")
+
         return f"""{system_prompt}
 
 ---
 
 # TASK: {task.id}
 
-{task_desc_section}{task_history}{codex_section}
+{task_desc_section}{recent_changes_section}{task_history}{codex_section}
 
 ## Relevant Planning Context
 
 {relevant_context}
-"""
-
-    def _generate_old_qa_prompt(self, task: Task, agent_id: str, agent_name: str) -> str:
-        """OLD QA PROMPT - KEPT FOR REFERENCE DURING MIGRATION."""
-        # Extract relevant context from planning docs
-        from core.context_extractor import extract_relevant_context
-        relevant_context = extract_relevant_context(
-            self.project_dir,
-            task.description or "",
-            "qa"
-        )
-
-        return f"""# QA Review: {task.id}
-
-You are **{agent_name}** (Agent ID: `{agent_id}`) reviewing task **{task.id}** as a QA agent.
-
-**NOTE**: This task has been assigned to you by the orchestrator. You have exclusive ownership.
-
-## Instructions
-
-1. **Read your task details from the database**:
-   - Connect to `.relay/tasks.db`
-   - Query: SELECT * FROM tasks WHERE id = "{task.id}"
-   - The `description` field contains the main task requirements
-   - Note the task `status`:
-     * "in_development" = New feature implementation
-     * "qa_fixing" = Fixing issues found by QA
-     * "security_fixing" = Fixing vulnerabilities found by Security
-   - Read the status to understand what kind of work you're doing
-
-2. **CRITICAL: Review/Create task history markdown log**:
-   - Check if `.relay/logs/{task.id}.md` exists
-
-   **If the file does NOT exist (FIRST RUN - you're the first developer):**
-   - Create the file with this header structure:
-     ```markdown
-     # Task {task.id}: [task title from database]
-
-     ## 📋 Task Description
-
-     [task description from database]
-
-     ---
-
-     ## 📝 Task Log
-
-     ### 🔨 Development Started
-     **Time:** [current timestamp YYYY-MM-DD HH:MM:SS]
-     **Agent:** {agent_name} ({agent_id})
-     **Status:** Development in progress
-
-     ```
-
-   **If the file EXISTS (REWORK/FIX - work was done before):**
-   - READ IT CAREFULLY to understand the FULL story
-   - Look for:
-     * What features were already implemented
-     * What QA tested and found issues with
-     * What security vulnerabilities were reported
-     * What fixes were attempted and their results
-   - **DO NOT repeat the same mistakes!**
-   - Build upon previous work, don't start from scratch
-
-3. **Also check task_logs table for structured data**:
-   - Query: SELECT * FROM task_logs WHERE task_id = "{task.id}" ORDER BY created_at ASC
-   - This provides timestamps and structured status info
-
-4. **Read relevant planning context**:
-
-   The following sections from planning documents are relevant to your task:
-
-{relevant_context}
-
-   **Note:** If you need additional context not provided above, you can read the full files:
-   - `docs/system_design.md`
-   - `docs/security_policy.md`
-   - `docs/ui_standards.md`
-   - `docs/master_plan.md`
-
-5. **Complete the task**:
-   - If status was "todo": Implement the feature from scratch
-   - If status was "qa_failed": Fix the QA issues documented in task_logs
-   - Focus on fixing issues reported in previous QA/Security reviews if this is a rework
-
-5b. **CRITICAL - Verify Build Configuration & Dependencies**:
-   - Before marking ANY task complete, verify:
-     * All referenced packages in config files (vite.config, postcss.config, etc.) are installed
-     * Run the build command (npm run build) to catch configuration errors
-   - **Common issues to check:**
-     * Tailwind CSS v4 requires @tailwindcss/postcss package
-     * PostCSS plugins must be installed as dependencies
-     * Vite plugins must be in package.json
-
-6. **For frontend tasks - CONDITIONAL VISUAL VERIFICATION**:
-
-   **Step 1: Determine task type:**
-   - **UI/Styling tasks**: Building components, pages, forms, buttons, layouts, styling existing components, visual changes
-   - **Logic tasks**: API integration, state management, utilities, hooks, services, data fetching
-   - **Config tasks**: Routing setup, build configuration, environment setup, tooling
-
-   **Step 2: Apply appropriate verification:**
-
-   **For UI/STYLING tasks - MANDATORY VISUAL VERIFICATION:**
-   - **BEFORE marking complete, you MUST verify styling is working:**
-     a. Run `npm run dev` and visit the page in browser
-     b. Take screenshots of the rendered page and save it in `.relay/logs/{task.id}_screenshots/` for QA reference
-     c. **CRITICAL CHECK**: Verify page is NOT unstyled
-        - If content looks like plain black text on white background = FAILURE
-        - If buttons are browser-default styled = FAILURE
-        - If there's no spacing/layout/colors = FAILURE
-     d. Check browser console for:
-        - Failed CSS requests
-        - PostCSS/Tailwind errors
-        - Missing module errors
-     e. Verify against design system in docs/ui_standards.md (if exists)
-   - **If styling is broken or missing:**
-     * Check package.json has all CSS framework dependencies
-     * Check config files (postcss.config.js, tailwind.config.js) match installed packages
-     * Run build command and fix any errors
-     * DO NOT mark as ready_for_qa until styling works!
-
-   **For Logic/Config tasks - BASIC VERIFICATION:**
-   - Run `npm run dev` to ensure app still starts
-   - Check browser console for errors related to your changes
-   - Test the specific functionality you implemented
-   - Visual styling verification is NOT required (unless you touched UI code)
-
-7. **CRITICAL: Document your work in the markdown log**:
-   - Append to `.relay/logs/{task.id}.md` with a DETAILED summary:
-     ```
-     ### ✅ Development Completed
-     **Time:** [current timestamp in format YYYY-MM-DD HH:MM:SS]
-     **Agent:** {agent_name} ({agent_id})
-     **Status:** Ready for QA
-
-     **Work Summary:**
-     - [What you implemented/fixed - be SPECIFIC]
-     - [Key decisions made]
-     - [Files created/modified]
-     - [Any important notes for QA/future developers]
-
-     **Files Modified:**
-     - `path/to/file1.js`
-     - `path/to/file2.py`
-
-     ---
-     ```
-   - **Be DETAILED and SPECIFIC** - this helps QA know what to test and future developers understand what was done
-   - If fixing QA/security issues, explain exactly what you fixed and how
-   - Use your agent name "{agent_name}" and ID "{agent_id}" in the log entry
-
-8. **Report completion and RELEASE THE BATON**:
-   - Update task: UPDATE tasks SET status='ready_for_qa', assignee=NULL WHERE id='{task.id}'
-
-9. **EXIT**: After updating the status and releasing the baton, your work is complete. Exit immediately.
-
-**CRITICAL - FORCE IMMEDIATE EXIT:**
-After updating the database, you MUST run this Python code to immediately terminate:
-```python
-import sys
-sys.exit(0)
-```
-
-Without sys.exit(0), the process takes 30s-2min to shutdown, blocking other agents!
-
-**CRITICAL - BATON MECHANISM**:
-- You hold the "baton" (task ownership) via the assignee field
-- MUST set assignee=NULL when updating status to release the baton
-- Reference the Security Policy (docs/security_policy.md) while implementing!
-
-**CRITICAL - TASK HISTORY**:
-- ALWAYS read `.relay/logs/{task.id}.md` (if it exists) to understand the full history of work on this task
-- If this is a qa_failed or security_failed task, focus on fixing reported issues
-- Do NOT repeat the same implementation that failed before
-- Build upon previous work instead of starting fresh
-- Every work you do should be informed by the history of what was done and what failed before
-- Log every decision and milestone in `.relay/logs/{task.id}.md` so future agents understand the history
-
-**SINGLE source of truth**:
-- tasks table: Main task data and current status
-- `.relay/logs/{task.id}.md`: Complete history of all work done on this task
-- Once you update the status to ready_for_qa, EXIT - do not wait for further instructions
 """
 
     def _generate_qa_prompt(self, task: Task, agent_id: str, agent_name: str) -> str:
@@ -1711,13 +1637,33 @@ Without sys.exit(0), the process takes 30s-2min to shutdown, blocking other agen
             "security"
         )
 
-        # Read task log if exists
+        # Read task log and extract recent changes
         task_log_path = self.project_dir / ".relay" / "logs" / f"{task.id}.md"
         task_history = ""
+        recent_changes_section = ""
+
         if task_log_path.exists():
             try:
                 history_content = task_log_path.read_text()
-                # Cap at 2000 chars to avoid bloat
+
+                # Extract recent developer changes for Security to review
+                recent_changes = self._extract_recent_changes(history_content)
+                if recent_changes:
+                    recent_changes_section = f"""
+
+## 🔨 Recently Completed Changes (from previous developer)
+
+The developer agent just completed this task and made the following changes:
+
+{recent_changes}
+
+**Your job:** Scan these changes for security vulnerabilities.
+
+---
+
+"""
+
+                # Full history for context
                 if len(history_content) > 2000:
                     history_content = history_content[:2000] + "\n\n[... truncated, read full file for complete history]"
                 task_history = f"""
@@ -1757,7 +1703,7 @@ Without sys.exit(0), the process takes 30s-2min to shutdown, blocking other agen
 You are **{agent_name}** (Agent ID: `{agent_id}`) performing a security scan on task **{task.id}**.
 
 **NOTE**: This task has been assigned to you by the orchestrator. You have exclusive ownership.
-{task_desc_section}{task_history}{vault_section}
+{task_desc_section}{recent_changes_section}{task_history}{vault_section}
 ## Instructions
 
 1. **Read the complete task history from markdown log**:

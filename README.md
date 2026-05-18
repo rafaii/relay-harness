@@ -239,9 +239,19 @@ Project-level configuration lives at `.relay/config.json`:
     "qa": "claude-haiku-4-5",
     "security": "claude-sonnet-4-5",
     "analyzer": "claude-sonnet-4-5"
+  },
+  "agents": {
+    "limits": {
+      "max_turns": 50,
+      "max_tokens": 100000
+    }
   }
 }
 ```
+
+**Agent Limits:**
+- `max_turns`: Maximum conversation turns per agent (default: 50) - prevents infinite loops
+- `max_tokens`: Maximum total tokens per agent (default: 100,000) - prevents excessive API usage
 
 Using `claude-haiku` for QA and cheaper agents for routine tasks can significantly reduce costs without impacting output quality.
 
@@ -287,15 +297,24 @@ No agent has awareness of what other agents are currently doing. Coordination ha
 
 ---
 
-## Failure Handling
+## Failure Handling & Retry Logic
 
 | Failure Type        | Behaviour                                                                                     |
 | ------------------- | --------------------------------------------------------------------------------------------- |
 | Agent timeout       | Task marked `failed`, logged, framework continues with other tasks                            |
-| QA failure          | QA creates a `FIX-{task_id}` task; original task marked `blocked` until fix is done           |
-| Security failure    | Same as QA — fix task created, dependents blocked                                             |
+| QA failure          | Task retried with exponential backoff (2^n seconds, max 1 hour). Max 5 retries, then permanently failed |
+| Security failure    | Same as QA — exponential backoff retry, max 5 attempts                                        |
 | Planning crash      | Checkpoint saved to `.relay/section1_progress.json`; `relay resume` retries missing docs only |
 | Manual interruption | `relay resume` picks up from last completed task                                              |
+| Token limit hit     | Agent stops at 50 turns (configurable), task marked for retry                                 |
+
+**Retry Backoff Schedule:**
+- Retry 1: 2 seconds
+- Retry 2: 4 seconds
+- Retry 3: 8 seconds
+- Retry 4: 16 seconds
+- Retry 5: 32 seconds
+- After 5 failures: Permanently failed (human intervention required)
 
 ---
 
@@ -304,11 +323,12 @@ No agent has awareness of what other agents are currently doing. Coordination ha
 ```
 python >= 3.10
 claude-code CLI (authenticated)
-chromadb
-fastapi
-uvicorn
-pexpect
-playwright (optional, for browser-based QA tasks)
+sqlalchemy >= 2.0.0
+pyyaml >= 6.0
+fastapi >= 0.100.0
+uvicorn >= 0.23.0
+tiktoken >= 0.5.0 (for token counting)
+playwright >= 1.40.0 (optional, for browser-based QA tasks)
 ```
 
 Install all Python dependencies:
@@ -316,6 +336,38 @@ Install all Python dependencies:
 ```bash
 pip install -r .relay-framework/requirements.txt
 ```
+
+**Optional Environment Variables:**
+- `SKIP_PLAYWRIGHT=1` - Skip Playwright installation if not needed
+
+---
+
+## Recent Improvements (v2.0.0)
+
+**Production Hardening:**
+- ✅ Thread-safe agent management (prevents race conditions)
+- ✅ Token budget enforcement (50 turn limit, configurable)
+- ✅ Exponential backoff retry logic (prevents rate limit exhaustion)
+- ✅ Vault writer queue (serialized, no thundering herd)
+- ✅ Shell script error handling (`set -euo pipefail`)
+
+**Context Optimization:**
+- ✅ Deduplicated system prompts (~1,000 tokens saved per agent)
+- ✅ Project-agnostic vault filtering (customizable per project)
+- ✅ Conditional planning doc includes (only when relevant)
+- ✅ Unified keyword extraction across modules
+
+**Observability:**
+- ✅ Token counting and logging per prompt
+- ✅ Prompt versioning (v2.0.0 with changelog)
+- ✅ Retry counter tracking with backoff visibility
+- ✅ Recent changes context for QA/Security agents
+
+**Code Quality:**
+- ✅ Externalized DevOps tasks to YAML templates
+- ✅ Removed 180+ lines of dead code
+- ✅ Fixed vault subsection parent context bug
+- ✅ Updated all `docs/` references to `.relay/vault/planning/`
 
 ---
 

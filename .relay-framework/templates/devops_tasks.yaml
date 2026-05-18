@@ -1,0 +1,161 @@
+# DevOps Tasks Template
+# These tasks are automatically created when the framework detects that all development tasks are complete
+
+tasks:
+  - id: DEVOPS-001
+    title: Create Dockerfile for application
+    description: |
+      Create Docker containerization setup for the application.
+
+      **Requirements:**
+      1. Review project structure and tech stack from docs/system_design.md
+      2. Create Dockerfile(s):
+         - Frontend: If separate frontend app, create frontend/Dockerfile
+         - Backend: Create backend/Dockerfile or root Dockerfile
+         - Multi-stage builds for optimization
+
+      3. Dockerfile must include:
+         - Appropriate base image (node:18-alpine, python:3.11-slim, etc.)
+         - Dependency installation
+         - Build steps
+         - Production optimizations (layer caching, minimal image size)
+         - Non-root user for security
+         - Health check endpoint
+
+      4. Create .dockerignore to exclude:
+         - node_modules, .git, .env, logs, temp files
+         - Development-only files
+
+      5. Create docker-compose.yml for local development:
+         - Application service(s)
+         - Database service (if needed)
+         - Volume mounts for development
+         - Environment variables
+         - Network configuration
+
+      6. Test locally:
+         - Build images successfully
+         - Run containers
+         - Verify application works
+         - Check image size (optimize if >500MB)
+
+      **Acceptance Criteria:**
+      - Dockerfile builds without errors
+      - Application runs in container
+      - docker-compose up starts all services
+      - Documentation in README for Docker usage
+
+      References: docs/system_design.md
+    phase: devops
+    role: devops_developer
+    agent_type: devops
+    dependencies: []
+    priority: 0
+    complexity: 3
+    status: todo
+
+  - id: DEVOPS-002
+    title: Setup CI/CD pipeline
+    description: |
+      Create continuous integration and deployment pipeline.
+
+      **Requirements:**
+      1. Choose CI/CD platform:
+         - GitHub Actions (if on GitHub)
+         - GitLab CI (if on GitLab)
+         - CircleCI, Travis, Jenkins (alternatives)
+
+      2. Create workflow files:
+         - `.github/workflows/ci.yml` (for GitHub Actions)
+         - Or equivalent for chosen platform
+
+      3. CI pipeline must include:
+         - Checkout code
+         - Install dependencies
+         - Run linters/formatters
+         - Run tests
+         - Build application
+         - Security scanning (npm audit, Snyk, etc.)
+
+      4. CD pipeline (optional, for staging):
+         - Deploy to staging environment
+         - Run smoke tests
+         - Notify on deployment
+
+      5. Pipeline triggers:
+         - On pull request: Run CI only
+         - On push to main: Run CI + CD
+         - Manual trigger option
+
+      6. Test the pipeline:
+         - Create test PR
+         - Verify all checks pass
+         - Fix any failures
+
+      **Acceptance Criteria:**
+      - CI pipeline runs on every PR
+      - All checks (lint, test, build) must pass
+      - Clear status badges in README
+      - Documentation for running locally
+
+      References: docs/system_design.md
+    phase: devops
+    role: devops_developer
+    agent_type: devops
+    dependencies:
+      - DEVOPS-001
+    priority: 0
+    complexity: 3
+    status: todo
+
+  - id: DEVOPS-003
+    title: Create environment configuration files
+    description: |
+      Setup environment configuration for different deployment environments.
+
+      **Requirements:**
+      1. Create environment templates:
+         - `.env.example` - Template with all required vars
+         - `.env.development` - Local development defaults
+         - `.env.production.template` - Production template
+
+      2. Document all environment variables in README:
+         - Variable name
+         - Purpose
+         - Default value (if any)
+         - Required vs optional
+         - Example values
+
+      3. Setup environment loading:
+         - Use dotenv or equivalent
+         - Validate required env vars on startup
+         - Provide clear error messages for missing vars
+
+      4. Security considerations:
+         - Never commit actual .env files
+         - Add .env to .gitignore
+         - Use secrets management for production (AWS Secrets Manager, etc.)
+         - Document secret rotation process
+
+      5. Environment-specific configs:
+         - Database URLs
+         - API keys (examples only)
+         - Feature flags
+         - Logging levels
+         - CORS settings
+         - Port numbers
+
+      **Acceptance Criteria:**
+      - .env.example complete with all variables
+      - Clear documentation in README
+      - Application fails fast with clear errors if env vars missing
+      - No secrets committed to git
+
+      References: docs/system_design.md, docs/security_policy.md
+    phase: devops
+    role: devops_developer
+    agent_type: devops
+    dependencies: []
+    priority: 0
+    complexity: 2
+    status: todo

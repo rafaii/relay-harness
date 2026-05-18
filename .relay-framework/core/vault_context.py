@@ -33,6 +33,7 @@ ROLE_VAULT_FILES = {
         "backend/api-endpoints.md",  # Frontend needs to know API contracts
     ],
     "qa": [
+        "architecture/tech-stack.md",  # QA needs to know test framework (pytest vs Jest)
         "backend/api-endpoints.md",
         "frontend/pages.md",
     ],
@@ -133,7 +134,7 @@ class VaultContextManager:
 
         # Apply smart filtering based on task keywords
         from .vault_filter import get_filtered_vault_context
-        filtered = get_filtered_vault_context(vault_contents, task_description)
+        filtered = get_filtered_vault_context(vault_contents, task_description, self.project_dir)
 
         token_estimate = len(filtered.split())
 

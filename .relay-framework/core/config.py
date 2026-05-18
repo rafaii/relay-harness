@@ -22,6 +22,10 @@ MODEL_ID_MAP = {
 # Default model used when no specific model is configured for an agent type
 DEFAULT_MODEL = 'us.anthropic.claude-sonnet-4-5-20250929-v1:0'
 
+# Default agent limits (to prevent infinite loops and excessive API usage)
+DEFAULT_MAX_AGENT_TURNS = 50  # Maximum conversation turns per agent
+DEFAULT_MAX_AGENT_TOKENS = 100000  # Maximum total tokens per agent (input + output)
+
 # Default model configuration for all agent types
 DEFAULT_AGENT_MODELS = {
     # SECTION 1: Planning & Governance Agents
@@ -505,6 +509,34 @@ def get_model_id_for_agent(agent_type: str, config: Optional[Dict[str, Any]] = N
 
     # Otherwise, map it to full model ID
     return MODEL_ID_MAP.get(model_name, MODEL_ID_MAP[DEFAULT_MODEL])
+
+
+def get_agent_limits(project_dir: Path, config: Optional[Dict[str, Any]] = None) -> Dict[str, int]:
+    """
+    Get agent execution limits (max turns, max tokens) from config or defaults.
+
+    Args:
+        project_dir: Project directory path
+        config: Optional pre-loaded configuration
+
+    Returns:
+        Dictionary with 'max_turns' and 'max_tokens' keys
+    """
+    if config is None:
+        try:
+            config = load_project_config(project_dir)
+        except FileNotFoundError:
+            # No config file, use defaults
+            config = {}
+
+    # Get limits from config or use defaults
+    agents_config = config.get('agents', {})
+    limits = agents_config.get('limits', {})
+
+    return {
+        'max_turns': limits.get('max_turns', DEFAULT_MAX_AGENT_TURNS),
+        'max_tokens': limits.get('max_tokens', DEFAULT_MAX_AGENT_TOKENS),
+    }
 
 
 def validate_config(config: Dict[str, Any]) -> bool:

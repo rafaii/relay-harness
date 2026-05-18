@@ -46,17 +46,21 @@ class ContextExtractor:
 
         context_parts = []
 
-        # Always include system_design.md sections
-        system_design = self.docs_dir / "system_design.md"
-        if system_design.exists():
-            sections = self._get_relevant_sections(
-                system_design,
-                keywords,
-                max_sections=max_sections
-            )
-            if sections:
-                context_parts.append("## planning/system_design.md\n")
-                context_parts.extend(sections)
+        # Include system_design.md only if task keywords match architecture topics
+        keywords_lower = [k.lower() for k in keywords]
+        architecture_terms = {"architecture", "design", "database", "api", "integration", "service", "schema", "tech", "stack"}
+
+        if any(term in keywords_lower for term in architecture_terms):
+            system_design = self.docs_dir / "system_design.md"
+            if system_design.exists():
+                sections = self._get_relevant_sections(
+                    system_design,
+                    keywords,
+                    max_sections=max_sections
+                )
+                if sections:
+                    context_parts.append("## planning/system_design.md\n")
+                    context_parts.extend(sections)
 
         # Include security_policy.md for security-sensitive tasks
         if self._is_security_sensitive(task_description):
@@ -100,25 +104,15 @@ class ContextExtractor:
         return "\n".join(context_parts)
 
     def _extract_keywords(self, text: str) -> List[str]:
-        """Extract relevant keywords from task description."""
-        # Convert to lowercase and split
-        words = re.findall(r'\b\w+\b', text.lower())
+        """
+        Extract relevant keywords from task description.
 
-        # Filter out common stop words
-        stop_words = {
-            'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at',
-            'to', 'for', 'of', 'with', 'by', 'from', 'as', 'is', 'are',
-            'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had',
-            'do', 'does', 'did', 'will', 'would', 'should', 'could',
-            'this', 'that', 'these', 'those', 'task', 'should', 'must'
-        }
+        Uses shared keyword extraction utility for consistency with vault_filter.
+        """
+        from .keyword_utils import extract_task_keywords
 
-        keywords = [w for w in words if w not in stop_words and len(w) > 3]
-
-        # Return unique keywords, most frequent first
-        from collections import Counter
-        counter = Counter(keywords)
-        return [word for word, _ in counter.most_common(10)]
+        # Return as list (not set) for compatibility with existing code
+        return list(extract_task_keywords(text, max_keywords=10))
 
     def _get_relevant_sections(
         self,
@@ -203,18 +197,16 @@ class ContextExtractor:
         Returns:
             Match score (higher = more relevant)
         """
-        section_lower = section.lower()
-        score = 0
+        from .keyword_utils import keyword_overlap_score
 
+        # Use shared utility for basic keyword counting
+        score = keyword_overlap_score(section, set(keywords))
+
+        # Add bonus if keywords appear in section header
+        header_line = section.split('\n')[0].lower() if section else ""
         for keyword in keywords:
-            # Count occurrences of keyword
-            count = section_lower.count(keyword)
-            score += count
-
-            # Bonus if keyword in header
-            header_line = section.split('\n')[0].lower()
             if keyword in header_line:
-                score += 3
+                score += 3  # Bonus for header match
 
         return score
 

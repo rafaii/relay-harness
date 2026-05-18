@@ -16,3 +16,6 @@ playwright>=1.40.0
 
 # Utilities
 python-dateutil>=2.8.2
+
+# Token Counting
+tiktoken>=0.5.0

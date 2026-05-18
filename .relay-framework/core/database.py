@@ -89,6 +89,10 @@ class Task(Base):
     created_at = Column(DateTime, default=_utc_now, nullable=False)
     updated_at = Column(DateTime, default=_utc_now, onupdate=_utc_now, nullable=False)
 
+    # Retry tracking (for exponential backoff)
+    retry_count = Column(Integer, default=0, nullable=False)
+    last_failed_at = Column(DateTime, nullable=True)
+
     # Relationships
     logs = relationship("TaskLog", back_populates="task", cascade="all, delete-orphan")
 

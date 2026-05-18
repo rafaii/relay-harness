@@ -13,8 +13,9 @@ Example:
 """
 
 import re
+import json
 import logging
-from typing import List, Dict, Set
+from typing import List, Dict, Set, Optional
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -34,8 +35,35 @@ TASK_TYPE_KEYWORDS = {
 }
 
 
-# Vault file → section patterns (regex to identify section boundaries)
-VAULT_FILE_SECTIONS = {
+def load_vault_filter_config(project_dir: Path) -> Optional[Dict]:
+    """
+    Load vault filter configuration from project-specific config file.
+
+    Args:
+        project_dir: Project root directory
+
+    Returns:
+        Filter config dict or None if not found
+    """
+    config_path = project_dir / ".relay" / "vault" / ".filter_config.json"
+
+    try:
+        if config_path.exists():
+            with open(config_path, 'r') as f:
+                config = json.load(f)
+                logger.info(f"Loaded vault filter config from {config_path}")
+                return config
+        else:
+            logger.debug(f"No vault filter config found at {config_path}, using defaults")
+            return None
+    except Exception as e:
+        logger.warning(f"Failed to load vault filter config from {config_path}: {e}")
+        return None
+
+
+# Default vault file → section patterns (fallback when no project-specific config exists)
+# This is kept for backward compatibility with existing projects
+VAULT_FILE_SECTIONS_DEFAULT = {
     "architecture/tech-stack.md": {
         "patterns": [r"^##\s+(.+)$", r"^###\s+(.+)$"],  # ## and ### headers
         "keywords_map": {
@@ -139,30 +167,54 @@ VAULT_FILE_SECTIONS = {
     },
 }
 
+# Module-level cache for loaded config (avoid re-reading on every call)
+_vault_filter_config_cache: Dict[str, Optional[Dict]] = {}
+
+
+def get_vault_file_sections(project_dir: Path) -> Dict:
+    """
+    Get vault file sections config, either from project-specific config or defaults.
+
+    Args:
+        project_dir: Project root directory
+
+    Returns:
+        Vault file sections configuration dict
+    """
+    cache_key = str(project_dir)
+
+    # Check cache first
+    if cache_key in _vault_filter_config_cache:
+        cached = _vault_filter_config_cache[cache_key]
+        return cached if cached is not None else VAULT_FILE_SECTIONS_DEFAULT
+
+    # Load from file
+    config = load_vault_filter_config(project_dir)
+
+    # Cache result
+    _vault_filter_config_cache[cache_key] = config
+
+    return config if config is not None else VAULT_FILE_SECTIONS_DEFAULT
+
 
 def extract_task_keywords(task_description: str) -> Set[str]:
     """
     Extract relevant keywords from task description.
 
+    Uses shared keyword extraction utility for consistency.
+
     Args:
         task_description: Task description text
 
     Returns:
-        Set of keywords found in task
+        Set of keywords extracted from task
     """
-    task_lower = task_description.lower()
-    keywords = set()
+    from .keyword_utils import extract_task_keywords as extract_keywords
 
-    # Check all known keywords
-    for task_type, keyword_list in TASK_TYPE_KEYWORDS.items():
-        for keyword in keyword_list:
-            if keyword in task_lower:
-                keywords.add(keyword)
-
-    return keywords
+    return extract_keywords(task_description, max_keywords=15)
 
 
-def filter_vault_file(content: str, filename: str, task_keywords: Set[str]) -> str:
+def filter_vault_file(content: str, filename: str, task_keywords: Set[str], project_dir: Path) -> str:
     """
     Filter vault file content to only relevant sections based on task keywords.
 
@@ -175,6 +227,7 @@ def filter_vault_file(content: str, filename: str, task_keywords: Set[str]) -> s
         content: Full vault file content
         filename: Vault file name (e.g., "architecture/tech-stack.md")
         task_keywords: Keywords extracted from task description
+        project_dir: Project root directory (for loading filter config)
 
     Returns:
         Filtered content with only relevant sections
@@ -186,9 +239,12 @@ def filter_vault_file(content: str, filename: str, task_keywords: Set[str]) -> s
             return "\n".join(lines[:50]) + f"\n\n[... {len(lines) - 50} lines truncated. Read full file if needed: .relay/vault/{filename}]"
         return content
 
+    # Load vault file sections config (project-specific or default)
+    vault_sections = get_vault_file_sections(project_dir)
+
     # Try custom filtering first (for complex patterns)
-    if filename in VAULT_FILE_SECTIONS:
-        config = VAULT_FILE_SECTIONS[filename]
+    if filename in vault_sections:
+        config = vault_sections[filename]
         keywords_map = config["keywords_map"]
 
         # Find which sections are relevant
@@ -222,6 +278,7 @@ def _extract_sections(content: str, target_sections: Set[str], section_patterns:
     current_section = None
     in_target_section = False
     section_depth = 0
+    parent_header = None  # Track parent section header
 
     for line in lines:
         # Check if this is a section header
@@ -246,8 +303,13 @@ def _extract_sections(content: str, target_sections: Set[str], section_patterns:
                 in_target_section = is_target
                 section_depth = header_depth
                 current_section = header_name
-            elif is_target:
-                # Subsection of current section that's also a target
+                # Update parent header when at top level
+                if header_depth == 2:  # ## header
+                    parent_header = line
+            elif is_target and header_depth > section_depth:
+                # Subsection matches - include parent header if not already captured
+                if not in_target_section and parent_header and parent_header not in result_lines:
+                    result_lines.append(parent_header)
                 in_target_section = True
 
             if in_target_section:
@@ -261,13 +323,14 @@ def _extract_sections(content: str, target_sections: Set[str], section_patterns:
     return "\n".join(result_lines)
 
 
-def get_filtered_vault_context(vault_files: List[tuple], task_description: str) -> str:
+def get_filtered_vault_context(vault_files: List[tuple], task_description: str, project_dir: Path) -> str:
     """
     Get filtered vault context for task.
 
     Args:
         vault_files: List of (filename, content) tuples
         task_description: Task description for keyword extraction
+        project_dir: Project root directory (for loading filter config)
 
     Returns:
         Combined filtered vault content
@@ -284,7 +347,7 @@ def get_filtered_vault_context(vault_files: List[tuple], task_description: str) 
         lines_before = len(content.split("\n"))
         total_lines_before += lines_before
 
-        filtered = filter_vault_file(content, filename, task_keywords)
+        filtered = filter_vault_file(content, filename, task_keywords, project_dir)
         lines_after = len(filtered.split("\n"))
         total_lines_after += lines_after
 

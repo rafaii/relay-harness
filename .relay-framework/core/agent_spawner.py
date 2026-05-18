@@ -13,6 +13,7 @@ from typing import Dict, Tuple, Optional, List
 from datetime import datetime
 import os
 import sys
+import threading
 
 # Add parent directory to path to import config and database
 sys.path.insert(0, str(Path(__file__).parent))
@@ -52,6 +53,7 @@ class AgentSpawner:
         self.db = db
         self.max_concurrency = max_concurrency
         self.running_agents: Dict[str, Tuple[subprocess.Popen, str, datetime, object]] = {}  # Added log_handle
+        self.running_agents_lock = threading.Lock()  # Thread-safe access to running_agents
         self.logs_dir = self.project_dir / ".relay" / "logs" / "agentlogs"
 
         # Create directories if they don't exist
@@ -437,7 +439,10 @@ class AgentSpawner:
             Returns (True, agent_id) if spawned successfully
         """
         # Check if task already has an ACTIVE agent assigned
-        for agent_id, (process, assigned_task_id, _, _) in self.running_agents.items():
+        with self.running_agents_lock:
+            running_agents_copy = list(self.running_agents.items())
+
+        for agent_id, (process, assigned_task_id, _, _) in running_agents_copy:
             if assigned_task_id == task_id:
                 # Check if process is actually still running
                 if process.poll() is None:
@@ -486,6 +491,10 @@ class AgentSpawner:
             # Get model ID for this role
             model_id = get_model_id_for_agent(role)
 
+            # Get agent execution limits (max turns, max tokens)
+            from .config import get_agent_limits
+            limits = get_agent_limits(self.project_dir)
+
             # Build Claude CLI command with --print mode and prompt
             # Use --print for non-interactive execution with stdin
             command = [
@@ -493,9 +502,13 @@ class AgentSpawner:
                 "--model", model_id,
                 "--dangerously-skip-permissions",  # Auto-approve tools for automated agents
                 "--print",  # Non-interactive mode that accepts stdin
+                "--max-turns", str(limits['max_turns']),  # Prevent infinite loops
             ]
 
-            logger.info(f"Spawning agent {agent_id} ({agent_name}) for task {task_id} (model: {model_id}) in {working_dir}")
+            logger.info(
+                f"Spawning agent {agent_id} ({agent_name}) for task {task_id} "
+                f"(model: {model_id}, max_turns: {limits['max_turns']}) in {working_dir}"
+            )
 
             # Get environment with venv configured
             agent_env = self._get_agent_env()
@@ -525,7 +538,8 @@ class AgentSpawner:
                 return False, None
 
             # Track the running agent (including log handle for cleanup)
-            self.running_agents[agent_id] = (process, task_id, datetime.now(), log_handle)
+            with self.running_agents_lock:
+                self.running_agents[agent_id] = (process, task_id, datetime.now(), log_handle)
 
             logger.info(f"Agent {agent_id} ({agent_name}) spawned successfully (PID: {process.pid}, task: {task_id})")
             return True, agent_id
@@ -574,7 +588,10 @@ class AgentSpawner:
         completed = []
         to_remove = []
 
-        for agent_id, (process, task_id, started_at, log_handle) in self.running_agents.items():
+        with self.running_agents_lock:
+            running_agents_copy = list(self.running_agents.items())
+
+        for agent_id, (process, task_id, started_at, log_handle) in running_agents_copy:
             # Non-blocking poll
             exit_code = process.poll()
 
@@ -617,19 +634,20 @@ class AgentSpawner:
 
         # Remove completed agents from tracking
         for agent_id in to_remove:
-            # Double-check process is terminated before removing from tracking
-            if agent_id in self.running_agents:
-                process = self.running_agents[agent_id][0]
-                try:
-                    # Force kill if somehow still running
-                    if process.poll() is None:
-                        logger.warning(f"Agent {agent_id} still running after completion check, force killing")
-                        process.kill()
-                        process.wait(timeout=1)
-                except Exception as e:
-                    logger.error(f"Error force-killing agent {agent_id}: {e}")
+            with self.running_agents_lock:
+                # Double-check process is terminated before removing from tracking
+                if agent_id in self.running_agents:
+                    process = self.running_agents[agent_id][0]
+                    try:
+                        # Force kill if somehow still running
+                        if process.poll() is None:
+                            logger.warning(f"Agent {agent_id} still running after completion check, force killing")
+                            process.kill()
+                            process.wait(timeout=1)
+                    except Exception as e:
+                        logger.error(f"Error force-killing agent {agent_id}: {e}")
 
-            del self.running_agents[agent_id]
+                    del self.running_agents[agent_id]
 
         return completed
 
@@ -642,7 +660,10 @@ class AgentSpawner:
         """
         leaked = []
 
-        for agent_id, (process, task_id, started_at, log_handle) in list(self.running_agents.items()):
+        with self.running_agents_lock:
+            running_agents_copy = list(self.running_agents.items())
+
+        for agent_id, (process, task_id, started_at, log_handle) in running_agents_copy:
             try:
                 # Check if process is actually running
                 exit_code = process.poll()
@@ -690,12 +711,13 @@ class AgentSpawner:
 
         # Remove leaked agents
         for agent_id in leaked:
-            if agent_id in self.running_agents:
-                try:
-                    self._unregister_agent_from_db(agent_id)
-                except Exception:
-                    pass
-                del self.running_agents[agent_id]
+            with self.running_agents_lock:
+                if agent_id in self.running_agents:
+                    try:
+                        self._unregister_agent_from_db(agent_id)
+                    except Exception:
+                        pass
+                    del self.running_agents[agent_id]
 
         if leaked:
             logger.info(f"Cleaned up {len(leaked)} leaked processes: {leaked}")
@@ -711,11 +733,12 @@ class AgentSpawner:
         Returns:
             Tuple of (exit_code, output) or (None, None) if agent not found
         """
-        if agent_id not in self.running_agents:
-            logger.warning(f"Cannot wait for agent {agent_id}: not found in running agents")
-            return None, None
+        with self.running_agents_lock:
+            if agent_id not in self.running_agents:
+                logger.warning(f"Cannot wait for agent {agent_id}: not found in running agents")
+                return None, None
 
-        process, task_id, started_at, log_handle = self.running_agents[agent_id]
+            process, task_id, started_at, log_handle = self.running_agents[agent_id]
 
         try:
             logger.info(f"Waiting for agent {agent_id} (task: {task_id}, timeout: {timeout})")
@@ -742,7 +765,8 @@ class AgentSpawner:
             self._unregister_agent_from_db(agent_id)
 
             # Remove from tracking
-            del self.running_agents[agent_id]
+            with self.running_agents_lock:
+                del self.running_agents[agent_id]
 
             return exit_code, output
 
@@ -763,10 +787,12 @@ class AgentSpawner:
         Returns:
             Dict with agent info or None if not found
         """
-        if agent_id not in self.running_agents:
-            return None
+        with self.running_agents_lock:
+            if agent_id not in self.running_agents:
+                return None
 
-        process, task_id, started_at, _ = self.running_agents[agent_id]
+            process, task_id, started_at, _ = self.running_agents[agent_id]
+
         elapsed = (datetime.now() - started_at).total_seconds()
 
         return {
@@ -789,11 +815,12 @@ class AgentSpawner:
         Args:
             agent_id: Agent ID to terminate
         """
-        if agent_id not in self.running_agents:
-            logger.warning(f"Cannot terminate {agent_id}: not in running_agents")
-            return
+        with self.running_agents_lock:
+            if agent_id not in self.running_agents:
+                logger.warning(f"Cannot terminate {agent_id}: not in running_agents")
+                return
 
-        process, task_id, start_time, log_handle = self.running_agents[agent_id]
+            process, task_id, start_time, log_handle = self.running_agents[agent_id]
 
         try:
             logger.info(f"Terminating agent {agent_id} (PID: {process.pid}, task: {task_id})")
@@ -822,8 +849,9 @@ class AgentSpawner:
                 logger.warning(f"Error closing log handle for agent {agent_id}: {e}")
 
             # Remove from tracking
-            if agent_id in self.running_agents:
-                del self.running_agents[agent_id]
+            with self.running_agents_lock:
+                if agent_id in self.running_agents:
+                    del self.running_agents[agent_id]
 
             # Unregister from database
             self._unregister_agent_from_db(agent_id)
@@ -843,10 +871,14 @@ class AgentSpawner:
             logger.info("No running agents to terminate")
             return
 
-        logger.info(f"Terminating {len(self.running_agents)} running agents...")
+        with self.running_agents_lock:
+            agent_count = len(self.running_agents)
+            running_agents_copy = list(self.running_agents.items())
+
+        logger.info(f"Terminating {agent_count} running agents...")
 
         # Send SIGTERM to all agents
-        for agent_id, (process, task_id, _, log_handle) in self.running_agents.items():
+        for agent_id, (process, task_id, _, log_handle) in running_agents_copy:
             try:
                 logger.info(f"Sending SIGTERM to agent {agent_id} (PID: {process.pid})")
                 process.terminate()
@@ -859,15 +891,24 @@ class AgentSpawner:
         # Wait for graceful termination
         import time
         start_time = time.time()
-        while self.running_agents and (time.time() - start_time) < timeout:
+
+        with self.running_agents_lock:
+            has_running_agents = bool(self.running_agents)
+
+        while has_running_agents and (time.time() - start_time) < timeout:
             time.sleep(0.5)
             # Check for completed agents
             self.check_completed_agents()
+            with self.running_agents_lock:
+                has_running_agents = bool(self.running_agents)
 
         # Force kill any remaining agents
-        if self.running_agents:
-            logger.warning(f"Force killing {len(self.running_agents)} agents that didn't terminate gracefully")
-            for agent_id, (process, task_id, _, log_handle) in list(self.running_agents.items()):
+        with self.running_agents_lock:
+            remaining_agents_copy = list(self.running_agents.items())
+
+        if remaining_agents_copy:
+            logger.warning(f"Force killing {len(remaining_agents_copy)} agents that didn't terminate gracefully")
+            for agent_id, (process, task_id, _, log_handle) in remaining_agents_copy:
                 try:
                     logger.warning(f"Sending SIGKILL to agent {agent_id} (PID: {process.pid})")
                     process.kill()
@@ -879,6 +920,7 @@ class AgentSpawner:
                     logger.error(f"Error force killing agent {agent_id}: {e}")
 
             # Clear all running agents
-            self.running_agents.clear()
+            with self.running_agents_lock:
+                self.running_agents.clear()
 
         logger.info("All agents terminated")

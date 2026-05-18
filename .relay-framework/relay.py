@@ -18,12 +18,17 @@ Usage:
 import argparse
 import asyncio
 import sys
+import logging
+import sqlite3
 from pathlib import Path
 
 # Add framework directory to Python path
 framework_dir = Path(__file__).parent.resolve()
 if str(framework_dir) not in sys.path:
     sys.path.insert(0, str(framework_dir))
+
+# Setup logger
+logger = logging.getLogger(__name__)
 
 
 def has_source_code(project_dir: Path) -> bool:
@@ -76,22 +81,38 @@ def detect_project_mode(project_dir: Path) -> str:
         # Check task completion status
         try:
             from core.database import TaskDatabase
+
+            # Verify DB file is not corrupt by checking size
+            tasks_db_path = project_dir / ".relay" / "tasks.db"
+            if tasks_db_path.stat().st_size == 0:
+                logger.error(f"Database file is empty (0 bytes): {tasks_db_path}")
+                logger.warning("Database appears corrupt - starting fresh")
+                return "new"
+
             db = TaskDatabase(project_dir)
             stats = db.get_statistics()
 
-            if stats['total'] == 0:
-                return "new"  # DB corrupt, restart
+            if not stats or stats.get('total', 0) == 0:
+                return "new"  # DB corrupt or empty, restart
             elif stats['completed'] == stats['total']:
                 return "add_feature"
             else:
                 return "resume"
-        except Exception:
-            # If DB read fails, check if we have docs
+        except sqlite3.DatabaseError as e:
+            # Specific DB corruption error
+            logger.error(f"Database corruption detected: {e}")
+            logger.warning("Database is corrupt - starting fresh with 'new' mode")
+            return "new"
+        except Exception as e:
+            # General error reading DB
+            logger.error(f"Failed to read task database: {e}")
             if relay_docs_exist:
-                return "resume"  # Try to resume
+                logger.warning("Attempting to resume with existing docs despite DB error")
+                return "resume"
             else:
                 return "new"
     elif relay_docs_exist and not tasks_db_exists:
+        logger.warning("Planning docs exist but tasks.db is missing")
         return "resume"  # Planning completed but DB missing
     else:
         return "new"

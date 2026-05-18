@@ -1,4 +1,6 @@
 #!/bin/bash
+set -euo pipefail  # Exit on error, undefined vars, pipe failures
+
 # Relay Framework Entry Point (Unix/Mac/Linux)
 
 # Get the directory where this script is actually located (resolve symlinks)
@@ -26,11 +28,35 @@ RELAY_DIR="$PROJECT_DIR/.relay"
 if [ ! -d "$RELAY_DIR/venv" ]; then
     echo "Virtual environment not found. Creating venv..."
     mkdir -p "$RELAY_DIR"
-    python3 -m venv "$RELAY_DIR/venv"
+
+    # Create venv with error checking
+    if ! python3 -m venv "$RELAY_DIR/venv"; then
+        echo "ERROR: Failed to create virtual environment" >&2
+        exit 1
+    fi
+
     echo "Installing dependencies..."
-    "$RELAY_DIR/venv/bin/pip" install --upgrade pip > /dev/null 2>&1
-    "$RELAY_DIR/venv/bin/pip" install -r "$FRAMEWORK_DIR/requirements.txt" > /dev/null 2>&1
-    "$RELAY_DIR/venv/bin/playwright" install chromium > /dev/null 2>&1
+
+    # Upgrade pip with error checking
+    if ! "$RELAY_DIR/venv/bin/pip" install --upgrade pip 2>&1 | tee "$RELAY_DIR/install.log"; then
+        echo "ERROR: pip upgrade failed. See $RELAY_DIR/install.log for details" >&2
+        exit 1
+    fi
+
+    # Install requirements with error checking
+    if ! "$RELAY_DIR/venv/bin/pip" install -r "$FRAMEWORK_DIR/requirements.txt" 2>&1 | tee -a "$RELAY_DIR/install.log"; then
+        echo "ERROR: requirements install failed. See $RELAY_DIR/install.log for details" >&2
+        exit 1
+    fi
+
+    # Make playwright optional
+    if [ "${SKIP_PLAYWRIGHT:-0}" != "1" ]; then
+        if ! "$RELAY_DIR/venv/bin/playwright" install chromium 2>&1 | tee -a "$RELAY_DIR/install.log"; then
+            echo "WARNING: Playwright install failed (optional)" >&2
+            # Don't exit - playwright is optional
+        fi
+    fi
+
     echo "Setup complete!"
 fi
 
