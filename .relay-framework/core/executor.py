@@ -1387,219 +1387,14 @@ The developer agent just completed this task and made the following changes:
 {relevant_context}
 """
 
-    def _generate_qa_prompt(self, task: Task, agent_id: str, agent_name: str) -> str:
-        """
-        Generate prompt for QA agent with task history awareness.
-
-        Args:
-            task: Task to generate QA prompt for
-            agent_id: Agent ID (e.g., "qa_1")
-            agent_name: Human-readable agent name (e.g., "Sarah")
-
-        Returns:
-            QA prompt string
-        """
-        # Extract relevant context from planning docs
-        from core.context_extractor import extract_relevant_context
-        relevant_context = extract_relevant_context(
-            self.project_dir,
-            task.description or "",
-            task.role or "qa"
-        )
-
-        return f"""# QA Review: {task.id}
-
-You are **{agent_name}** (Agent ID: `{agent_id}`) reviewing task **{task.id}** as a QA agent.
-
-**NOTE**: This task has been assigned to you by the orchestrator. You have exclusive ownership.
-
-## Instructions
-
-1. **Read the complete task history from markdown log**:
-   - Read `.relay/logs/{task.id}.md` to understand what has been done
-   - **If file doesn't exist:** Create it with task header (get title/description from database), then add a note that QA started
-   - **This file should contain the FULL context:**
-     * Original task requirements
-     * What the developer implemented
-     * If this task failed QA before and what issues were found
-     * What fixes the developer made
-   - **Use this to focus your testing** - prioritize areas that failed before
-
-2. **Also check database for task details**:
-   - Connect to `.relay/tasks.db`
-   - Query: SELECT * FROM tasks WHERE id = "{task.id}"
-   
-2b. **CRITICAL - Pre-Check: Build Validation**:
-   - **BEFORE starting functional tests**, verify the build works:
-     * Run `npm run build` (or equivalent) to check for config errors
-     * Check terminal output for missing dependencies or plugin errors
-     * If build fails = AUTOMATIC QA FAIL
-
-3. **Review implementation - ENHANCED**:
-   - Check code quality and correctness
-   - Test functionality against requirements
-   - Verify error handling
-   - Check edge cases
-   - **For frontend tasks:**
-     * **FIRST**: Determine task type (see step 4)
-     * Apply appropriate verification based on task type
-     * Test functionality against requirements
-
-4. **CRITICAL - Conditional Frontend Verification**:
-
-   **Step 4a - Determine Task Type:**
-   Read the task description and developer's work log to classify:
-   - **UI/Styling task**: Building/modifying components, pages, forms, buttons, layouts, CSS changes, visual features
-   - **Logic task**: API integration, state management, utilities, hooks, services, data processing
-   - **Config task**: Routing, build config, environment setup, tooling
-
-   **Step 4b - For UI/STYLING Tasks - MANDATORY VISUAL VERIFICATION:**
-   - Launch the application (npm run dev or preview build)
-   - Navigate to the implemented/modified pages
-   - Take screenshots
-   - **CRITICAL FAILURE CONDITIONS - Any of these = IMMEDIATE QA FAIL:**
-     * ❌ Page is completely unstyled (plain text, no colors/spacing)
-     * ❌ Buttons look like browser defaults (no custom styling)
-     * ❌ No layout/grid system visible
-     * ❌ Browser console shows CSS loading errors
-     * ❌ Browser console shows "Failed to load module" for CSS files
-     * ❌ Browser console shows PostCSS/Tailwind errors
-   - **If ANY styling failure found:**
-     * STOP testing immediately
-     * Document: "CRITICAL: Styling not loading - likely missing dependency"
-     * Check package.json vs config files for missing packages
-     * Mark as QA FAILED with detailed description
-   - **If styling check passes, proceed with functional tests:**
-     * Use BrowserTestRunner to verify UI
-     * Test user interactions
-     * Check for JavaScript console errors
-     * Verify responsive design
-     * Validate against design system colors/fonts/spacing/components
-
-   **Step 4c - For Logic/Config Tasks - FUNCTIONAL VERIFICATION:**
-   - Run `npm run dev` to ensure app still works
-   - Test the specific functionality implemented
-   - Check browser console for errors related to the changes
-   - Verify the logic/configuration works as expected
-   - Visual styling verification is NOT required (unless UI code was modified)
-
-5. **Browser Console Monitoring**:
-   - Open browser DevTools Console tab
-   - Look for ERROR messages (not just warnings)
-   - **Auto-fail conditions:**
-     * Failed to load CSS/stylesheet
-     * Module not found errors
-     * PostCSS/Tailwind compilation errors
-     * 404s for asset files
-
-6. **CRITICAL: Document your QA results in the markdown log**:
-   - Append to `.relay/logs/{task.id}.md` with DETAILED test results:
-     ```
-     ### ✅ QA Testing PASSED  (or ❌ QA Testing FAILED)
-     **Time:** [current timestamp in format YYYY-MM-DD HH:MM:SS]
-     **Agent:** {agent_name} ({agent_id})
-     **Status:** [Ready for Security / Needs Developer Fixes]
-
-     **Test Summary:**
-     - [What you tested]
-     - [Test results]
-     - [Any edge cases checked]
-
-     **Issues Found:** (if failed)
-     1. [Specific issue with reproduction steps]
-     2. [Another issue with expected vs actual behavior]
-
-     ---
-     ```
-   - **Be SPECIFIC about failures** - developers need exact reproduction steps and clear descriptions
-   - Use your agent name "{agent_name}" and ID "{agent_id}" in the log entry
-
-7. **Report results and RELEASE THE BATON**:
-   - If all tests pass:
-     - UPDATE tasks SET status='ready_for_security', assignee=NULL WHERE id='{task.id}'
-   - If tests fail:
-     - UPDATE tasks SET status='qa_failed', assignee=NULL WHERE id='{task.id}'
-
-8. **EXIT**: After updating the status and releasing the baton, your QA work is complete. Exit immediately.
-
-**CRITICAL - FORCE IMMEDIATE EXIT:**
-After updating the database, you MUST run this Python code to immediately terminate:
-```python
-import sys
-sys.exit(0)
-```
-
-Without sys.exit(0), the process takes 30s-2min to shutdown, blocking other agents!
-
-**CRITICAL - BATON MECHANISM**:
-- You hold the "baton" (task ownership) while working on this task
-- MUST set assignee=NULL when updating status to release the baton
-- Database is the SINGLE source of truth of task status
-- `.relay/logs/{task.id}.md` is the SINGLE source of truth for task history and context for future agents
-
-**CRITICAL - TASK HISTORY**:
-- ALWAYS read `.relay/logs/{task.id}.md` to see previous QA results
-- If this task was qa_failed before, verify the fixes
-- Document your findings clearly in `.relay/logs/{task.id}.md` so the developer knows what to fix
-- Be specific: "Button X doesn't work when Y" not just "UI broken"
-
-**Once you update the status, EXIT - do not wait for further instructions**
-
----
-
-## Visual QA Checklist for Frontend Tasks
-
-**NOTE**: This checklist is for UI/STYLING tasks only. For logic/config tasks, skip visual checks and focus on functional testing.
-
-### Task Type Classification:
-- **UI/Styling**: Use full checklist below
-- **Logic/Config**: Skip visual checks, only verify functionality
-
-### ✅ PASS Criteria (UI/Styling Tasks):
-- [ ] Page loads without console errors
-- [ ] CSS/styling is fully applied
-- [ ] Colors match design system (if defined)
-- [ ] Spacing/padding is present (not browser defaults)
-- [ ] Buttons have custom styling
-- [ ] Layout/grid system is visible
-- [ ] Responsive design works (if applicable)
-- [ ] All functionality works as expected
-
-### ❌ FAIL Criteria for UI/Styling Tasks (Any one = QA FAIL):
-- [ ] Page is unstyled (plain HTML appearance)
-- [ ] Console shows CSS loading errors
-- [ ] Console shows "Module not found" for styling dependencies
-- [ ] Console shows PostCSS/Tailwind errors
-- [ ] Build command fails
-- [ ] Missing dependencies referenced in config files
-- [ ] Buttons/components use only browser default styling
-- [ ] No spacing/colors/layout applied
-
-### ✅ PASS Criteria (Logic/Config Tasks):
-- [ ] App runs without errors
-- [ ] Implemented functionality works as expected
-- [ ] No console errors related to the changes
-- [ ] Code quality is acceptable
-
-### 🔍 How to Check:
-**For UI/Styling Tasks:**
-1. Run `npm run build` - must succeed without errors
-2. Run `npm run dev` - must start without errors
-3. Open browser DevTools → Console tab
-4. Navigate to implemented page
-5. Take screenshot
-6. Compare screenshot to UI/Styling checklist above
-
-**For Logic/Config Tasks:**
-1. Run `npm run dev` - must start without errors
-2. Test the specific functionality
-3. Check console for errors related to changes
-4. Verify requirements are met
-"""
 
     def _generate_security_prompt(self, task: Task, agent_id: str, agent_name: str) -> str:
         """
-        Generate prompt for Security agent with vault context.
+        Generate prompt for Security agent.
+
+        Uses two-layer architecture:
+        - Layer 1: Static system prompt from system_prompts.py
+        - Layer 2: Dynamic task context (vault + planning docs + history)
 
         Args:
             task: Task to generate Security prompt for
@@ -1609,7 +1404,13 @@ Without sys.exit(0), the process takes 30s-2min to shutdown, blocking other agen
         Returns:
             Security prompt string
         """
-        # Get Vault context for Security agent
+        # === LAYER 1: Static System Prompt ===
+        from core.system_prompts import get_system_prompt
+        system_prompt = get_system_prompt("security", agent_name, agent_id)
+
+        # === LAYER 2: Dynamic Task Context ===
+
+        # 2a. Get Vault context for Security agent
         from core.vault_context import VaultContextManager
 
         if not hasattr(self, '_vault_manager'):
@@ -1617,19 +1418,17 @@ Without sys.exit(0), the process takes 30s-2min to shutdown, blocking other agen
 
         vault_context = self._vault_manager.get_context_for_agent("security", task.description or "")
 
-        vault_section = ""
+        codex_section = ""
         if vault_context:
-            vault_section = f"""
-
+            codex_section = f"""
 ## 📖 Security Standards & Architecture (Vault Context)
 
 {vault_context}
 
 ---
-
 """
 
-        # Also extract relevant context from security policy (legacy)
+        # 2b. Extract relevant context from security policy
         from core.context_extractor import extract_relevant_context
         relevant_context = extract_relevant_context(
             self.project_dir,
@@ -1637,7 +1436,17 @@ Without sys.exit(0), the process takes 30s-2min to shutdown, blocking other agen
             "security"
         )
 
-        # Read task log and extract recent changes
+        planning_section = ""
+        if relevant_context:
+            planning_section = f"""
+## 📋 Security Policy Reference
+
+{relevant_context}
+
+---
+"""
+
+        # 2c. Read task log and extract recent changes
         task_log_path = self.project_dir / ".relay" / "logs" / f"{task.id}.md"
         task_history = ""
         recent_changes_section = ""
@@ -1650,149 +1459,58 @@ Without sys.exit(0), the process takes 30s-2min to shutdown, blocking other agen
                 recent_changes = self._extract_recent_changes(history_content)
                 if recent_changes:
                     recent_changes_section = f"""
+## 🔨 Recently Completed Changes
 
-## 🔨 Recently Completed Changes (from previous developer)
-
-The developer agent just completed this task and made the following changes:
+The developer just completed this task. Review these changes for security vulnerabilities:
 
 {recent_changes}
 
-**Your job:** Scan these changes for security vulnerabilities.
-
 ---
-
 """
 
                 # Full history for context
                 if len(history_content) > 2000:
                     history_content = history_content[:2000] + "\n\n[... truncated, read full file for complete history]"
                 task_history = f"""
-
 ## 📜 Task History
 
 {history_content}
 
-**Note:** This task has prior work. Read carefully to avoid repeating mistakes.
+**Note:** This task has prior work. Review to understand the context.
 
 ---
-
 """
             except Exception:
                 pass
 
-        # Show task description for first-time tasks
+        # 2d. Task description
         task_desc_section = ""
         if not task_history:
             task_desc_section = f"""
+**Task Description**:
+{task.description or '[Read from database]'}
 
-## 📋 Task Description
+**Current Status**: `{task.status}`
+"""
 
-**Title:** {task.title or 'Unknown'}
+        # === COMBINE: System Prompt + Task Context ===
 
-**Requirements:**
-{task.description or '[No description provided]'}
-
-**Current Status:** `{task.status}`
+        return f"""{system_prompt}
 
 ---
 
-"""
+# TASK: {task.id}
 
-        return f"""# Security Review: {task.id}
+{task_desc_section}{recent_changes_section}{task_history}{codex_section}{planning_section}
 
-You are **{agent_name}** (Agent ID: `{agent_id}`) performing a security scan on task **{task.id}**.
+## Your Assignment
 
-**NOTE**: This task has been assigned to you by the orchestrator. You have exclusive ownership.
-{task_desc_section}{recent_changes_section}{task_history}{vault_section}
-## Instructions
-
-1. **Read the complete task history from markdown log**:
-   - Read `.relay/logs/{task.id}.md` to understand what has been done
-   - **If file doesn't exist:** Create it with task header (get title/description from database), then add a note that Security scan started
-   - **This file should contain the FULL context:**
-     * Original task requirements
-     * What the developer implemented
-     * What QA tested and approved
-     * If this task failed security before and what vulnerabilities were found
-     * What fixes the developer made
-   - **Use this to focus your scan** - prioritize areas that failed before
-
-2. **Also check database for task details**:
-   - Connect to `.relay/tasks.db`
-   - Query: SELECT * FROM tasks WHERE id = "{task.id}"
-
-3. **Review relevant security policy sections**:
-
-{relevant_context}
-
-   **Note:** If you need additional security policy context, read the full file:
-   - `docs/security_policy.md`
-
-4. **Perform security scan**:
-   - Check for OWASP Top 10 vulnerabilities
-   - Verify input validation
-   - Check authentication/authorization
-   - Review data encryption
-   - Check for insecure dependencies (refer to Forbidden Library list)
-   - Scan for hardcoded secrets, API keys, passwords
-   - Verify secure configurations
-
-5. **CRITICAL: Document your security scan results in the markdown log**:
-   - Append to `.relay/logs/{task.id}.md` with DETAILED scan results:
-     ```
-     ### ✅ Security Scan PASSED  (or 🚨 Security Scan FAILED)
-     **Time:** [current timestamp in format YYYY-MM-DD HH:MM:SS]
-     **Agent:** {agent_name} ({agent_id})
-     **Status:** [✅ TASK COMPLETE / Needs Developer Fixes]
-
-     **Scan Summary:**
-     - [What you scanned for]
-     - [Scan results]
-     - [Security checks performed]
-
-     **Vulnerabilities Found:** (if failed)
-     - **HIGH**: [CVE-XXXX] [Package name version X.Y] - [Description]
-     - **MEDIUM**: [Description with specific details]
-
-     ---
-     ```
-   - **Be SPECIFIC about vulnerabilities** - include CVE numbers, package names/versions, exact issues
-   - Use your agent name "{agent_name}" and ID "{agent_id}" in the log entry
-
-6. **Report results and RELEASE THE BATON**:
-   - If security scan passes:
-     - UPDATE tasks SET status='done', assignee=NULL WHERE id='{task.id}'
-   - If security issues found:
-     - UPDATE tasks SET status='security_failed', assignee=NULL WHERE id='{task.id}'
-     - Update `.relay/logs/{task.id}.md` with detailed vulnerability information so the developer knows exactly what to fix
-     - **Be SPECIFIC**: List CVE numbers, vulnerable packages/versions, exact security issues found
-
-7. **EXIT**: After updating the status and releasing the baton, your security review is complete. Exit immediately.
-
-**CRITICAL - FORCE IMMEDIATE EXIT:**
-After updating the database, you MUST run this Python code to immediately terminate:
-```python
-import sys
-sys.exit(0)
+Read task details from `.relay/tasks.db`:
+```sql
+SELECT * FROM tasks WHERE id = '{task.id}'
 ```
 
-Without sys.exit(0), the process takes 30s-2min to shutdown, blocking other agents!
-
-**CRITICAL - BATON MECHANISM**:
-- You hold the "baton" (task ownership) while working on this task
-- MUST set assignee=NULL when updating status to release the baton
-- Reference docs/security_policy.md for all security requirements!
-- Database is the SINGLE source of truth of task status
-- `.relay/logs/{task.id}.md` is the SINGLE source of truth for task history and context for future agents
-
-
-**CRITICAL - TASK HISTORY**:
-- ALWAYS read `.relay/logs/{task.id}.md` to see previous security results
-- If this task was security_failed before, verify the fixes
-- Document your findings clearly with CVE numbers, package names, versions
-- Be specific: "Package X version Y has CVE-2024-1234" not just "dependencies vulnerable"
-
-**Once you update the status, EXIT - do not wait for further instructions**
+Perform a security scan on the implementation.
 """
 
 
@@ -1912,6 +1630,10 @@ sys.exit(0)
         """
         Generate prompt for DevOps agent.
 
+        Uses two-layer architecture:
+        - Layer 1: Static system prompt from system_prompts.py
+        - Layer 2: Dynamic task context (vault + planning docs + history)
+
         Args:
             task: Task to generate prompt for
             agent_id: Agent ID (e.g., "devops_1")
@@ -1920,7 +1642,33 @@ sys.exit(0)
         Returns:
             DevOps prompt string
         """
-        # Extract relevant context from system design
+        # === LAYER 1: Static System Prompt ===
+        from core.system_prompts import get_system_prompt
+        system_prompt = get_system_prompt("devops", agent_name, agent_id)
+
+        # === LAYER 2: Dynamic Task Context ===
+
+        # 2a. Get Vault context (targeted, domain-specific)
+        from core.vault_context import VaultContextManager
+
+        if not hasattr(self, '_vault_manager'):
+            self._vault_manager = VaultContextManager(self.project_dir)
+
+        vault_context = self._vault_manager.get_context_for_agent("devops", task.description or "")
+
+        codex_section = ""
+        if vault_context:
+            codex_section = f"""
+## 📖 Current Infrastructure State (Vault Context)
+
+{vault_context}
+
+**Note:** This shows current infrastructure. Read vault files for complete details.
+
+---
+"""
+
+        # 2b. Extract relevant context from planning docs
         from core.context_extractor import extract_relevant_context
         relevant_context = extract_relevant_context(
             self.project_dir,
@@ -1928,123 +1676,73 @@ sys.exit(0)
             "devops"
         )
 
-        return f"""# DevOps Task: {task.id}
-
-You are **{agent_name}** (Agent ID: `{agent_id}`) working on DevOps task **{task.id}**.
-
-## Instructions
-
-1. **Read task details from database**:
-   - Connect to `.relay/tasks.db`
-   - Query: SELECT * FROM tasks WHERE id = "{task.id}"
-   - The description field contains infrastructure/deployment requirements
-
-2. **Review relevant system design sections**:
+        planning_section = ""
+        if relevant_context:
+            planning_section = f"""
+## 📋 System Design Reference
 
 {relevant_context}
 
-   **Note:** Read full `docs/system_design.md` for complete tech stack and architecture context.
+---
+"""
 
-3. **Complete the DevOps task**:
+        # 2c. Read task log if exists (previous attempts)
+        task_log_path = self.project_dir / ".relay" / "logs" / f"{task.id}.md"
+        task_history = ""
+        if task_log_path.exists():
+            try:
+                history_content = task_log_path.read_text()
+                if len(history_content) > 2000:
+                    history_content = history_content[:2000] + "\n\n[... truncated, read full file for complete history]"
+                task_history = f"""
+## 📜 Task History
 
-   Your work depends on the task type:
+{history_content}
 
-   **For Dockerfile creation:**
-   - Review project structure and dependencies
-   - Create optimized multi-stage Dockerfile
-   - Use appropriate base images (alpine/slim variants)
-   - Implement security best practices (non-root user, minimal layers)
-   - Create .dockerignore
-   - Create docker-compose.yml for local development
-   - Test build and run locally
+**Note:** This task has prior attempts. Review to avoid repeating mistakes.
 
-   **For CI/CD setup:**
-   - Choose appropriate platform (GitHub Actions recommended)
-   - Create workflow files (.github/workflows/)
-   - Implement: lint → test → build → (optional) deploy
-   - Add status badges to README
-   - Test pipeline with dummy commit
+---
+"""
+            except Exception:
+                pass
 
-   **For environment configuration:**
-   - Create .env.example with all variables
-   - Document each variable in README
-   - Setup environment loading in application
-   - Validate required variables on startup
-   - Never commit secrets
+        # 2d. Task description
+        task_desc_section = ""
+        if not task_history:
+            task_desc_section = f"""
+**Task Description**:
+{task.description or '[Read from database]'}
 
-   **For deployment configuration:**
-   - Choose deployment platform (Vercel, Netlify, AWS, etc.)
-   - Create deployment configuration files
-   - Setup environment variables
-   - Document deployment process
-   - Test deployment to staging
+**Current Status**: `{task.status}`
+"""
 
-4. **Follow DevOps best practices**:
-   - Infrastructure as Code (IaC)
-   - Security-first approach
-   - Minimal attack surface
-   - Clear documentation
-   - Repeatable deployments
-   - Health checks and monitoring
+        # === COMBINE: System Prompt + Task Context ===
 
-5. **Document your work**:
-   - Create/update `.relay/logs/{task.id}.md`:
-     ```markdown
-     ### ✅ DevOps Task Complete
-     **Time:** [current timestamp YYYY-MM-DD HH:MM:SS]
-     **Agent:** {agent_name} ({agent_id})
-     **Status:** Ready for QA
+        return f"""{system_prompt}
 
-     **Work Summary:**
-     - [What you created/configured]
-     - [Key decisions made]
-     - [Files created/modified]
+---
 
-     **Files Created/Modified:**
-     - `Dockerfile`
-     - `.github/workflows/ci.yml`
-     - `.env.example`
-     - etc.
+# TASK: {task.id}
 
-     **Testing:**
-     - [How you tested the setup]
-     - [Results]
+{task_desc_section}{task_history}{codex_section}{planning_section}
 
-     **Deployment Notes:**
-     - [Important considerations for production]
-     - [Environment variables needed]
-     - [Manual steps required]
-     ```
+## Your Assignment
 
-6. **Update task status**:
-   - If task completed successfully:
-     * UPDATE tasks SET status='ready_for_qa', assignee=NULL WHERE id='{task.id}'
-   - If unable to complete:
-     * UPDATE tasks SET status='failed', assignee=NULL WHERE id='{task.id}'
-     * Document why in the task log
-
-7. **EXIT immediately** after updating status:
-```python
-import sys
-sys.exit(0)
+Read task details from `.relay/tasks.db`:
+```sql
+SELECT * FROM tasks WHERE id = '{task.id}'
 ```
 
-**DevOps Checklist:**
-- [ ] Configuration follows security best practices
-- [ ] Documentation complete (README updated)
-- [ ] Tested locally
-- [ ] No secrets committed
-- [ ] Clear deployment instructions
-- [ ] Health checks included (if applicable)
-
-**SINGLE source of truth:**
-- tasks table: Task data and status
-- `.relay/logs/{task.id}.md`: DevOps work history
+The description field contains infrastructure/deployment requirements.
 """
 
     def _generate_database_prompt(self, task: Task, agent_id: str, agent_name: str) -> str:
         """
         Generate prompt for Database agent (migration generation).
+
+        Uses two-layer architecture:
+        - Layer 1: Static system prompt from system_prompts.py
+        - Layer 2: Dynamic task context (vault + planning docs + history)
 
         Args:
             task: Task to generate prompt for
@@ -2054,7 +1752,33 @@ sys.exit(0)
         Returns:
             Database prompt string
         """
-        # Extract relevant context from system design
+        # === LAYER 1: Static System Prompt ===
+        from core.system_prompts import get_system_prompt
+        system_prompt = get_system_prompt("database", agent_name, agent_id)
+
+        # === LAYER 2: Dynamic Task Context ===
+
+        # 2a. Get Vault context (targeted, domain-specific)
+        from core.vault_context import VaultContextManager
+
+        if not hasattr(self, '_vault_manager'):
+            self._vault_manager = VaultContextManager(self.project_dir)
+
+        vault_context = self._vault_manager.get_context_for_agent("database", task.description or "")
+
+        codex_section = ""
+        if vault_context:
+            codex_section = f"""
+## 📖 Current Database Schema (Vault Context)
+
+{vault_context}
+
+**Note:** This shows current schema state. Read vault files for complete details.
+
+---
+"""
+
+        # 2b. Extract relevant context from planning docs
         from core.context_extractor import extract_relevant_context
         relevant_context = extract_relevant_context(
             self.project_dir,
@@ -2062,104 +1786,64 @@ sys.exit(0)
             "database"
         )
 
-        return f"""# Database Migration Task: {task.id}
-
-You are **{agent_name}** (Agent ID: `{agent_id}`) creating a database migration for task **{task.id}**.
-
-## Instructions
-
-1. **Read task details from database**:
-   - Connect to `.relay/tasks.db`
-   - Query: SELECT * FROM tasks WHERE id = "{task.id}"
-   - The description field explains what schema changes need migration files
-
-2. **Read parent task work log**:
-   - Your task description mentions a parent task (e.g., "for task BE-001")
-   - Read `.relay/logs/[parent-task-id].md` to see what was actually implemented
-   - Identify all database schema changes made
-
-3. **Review relevant system design sections**:
+        planning_section = ""
+        if relevant_context:
+            planning_section = f"""
+## 📋 System Design Reference
 
 {relevant_context}
 
-   **Note:** Read full `docs/system_design.md` if you need more database architecture context.
+---
+"""
 
-4. **Detect migration framework**:
-   - Check project for: Django migrations, Prisma schema, Alembic, or raw SQL
-   - Read existing migration files to understand naming/structure conventions
-   - Follow the same pattern for your migration
+        # 2c. Read task log if exists (previous migration attempts)
+        task_log_path = self.project_dir / ".relay" / "logs" / f"{task.id}.md"
+        task_history = ""
+        if task_log_path.exists():
+            try:
+                history_content = task_log_path.read_text()
+                if len(history_content) > 2000:
+                    history_content = history_content[:2000] + "\n\n[... truncated, read full file for complete history]"
+                task_history = f"""
+## 📜 Task History
 
-5. **Generate migration file**:
-   - **Django**: Create file in `<app>/migrations/XXXX_<description>.py`
-   - **Prisma**: Update `schema.prisma`, then run `npx prisma migrate dev --name <description>`
-   - **Alembic**: Run `alembic revision -m "<description>"` and edit generated file
-   - **Raw SQL**: Create `migrations/<timestamp>_<description>.sql`
+{history_content}
 
-6. **Migration must include**:
-   - Forward migration (apply changes)
-   - Backward migration (rollback changes)
-   - All schema changes from parent task:
-     * New tables/models
-     * Modified columns/fields
-     * Indexes
-     * Foreign keys
-     * Constraints
-   - Data transformations if needed (with safety checks)
+**Note:** This task has prior attempts. Review to avoid repeating mistakes.
 
-7. **Test the migration**:
-   - Backup test database
-   - Run migration forward
-   - Verify schema changes applied
-   - Run migration backward
-   - Verify schema reverted correctly
+---
+"""
+            except Exception:
+                pass
 
-8. **Document your work**:
-   - Create/update `.relay/logs/{task.id}.md` with:
-     ```markdown
-     ### ✅ Migration Generated
-     **Time:** [current timestamp YYYY-MM-DD HH:MM:SS]
-     **Agent:** {agent_name} ({agent_id})
-     **Status:** Ready for QA
+        # 2d. Task description
+        task_desc_section = ""
+        if not task_history:
+            task_desc_section = f"""
+**Task Description**:
+{task.description or '[Read from database]'}
 
-     **Migration Summary:**
-     - Migration file: [path to file]
-     - Framework: [Django/Prisma/Alembic/SQL]
-     - Schema changes:
-       * [list all tables/columns/indexes modified]
+**Current Status**: `{task.status}`
+"""
 
-     **Testing:**
-     - Forward migration: [✅ PASS / ❌ FAIL]
-     - Backward migration: [✅ PASS / ❌ FAIL]
+        # === COMBINE: System Prompt + Task Context ===
 
-     **Notes:**
-     - [Any important considerations for deploying this migration]
-     - [Data loss risks if any]
-     ```
+        return f"""{system_prompt}
 
-9. **Update task status**:
-   - If migration created and tested successfully:
-     * UPDATE tasks SET status='ready_for_qa', assignee=NULL WHERE id='{task.id}'
-   - If unable to create migration:
-     * UPDATE tasks SET status='failed', assignee=NULL WHERE id='{task.id}'
-     * Document why in the task log
+---
 
-10. **EXIT immediately** after updating status:
-```python
-import sys
-sys.exit(0)
+# TASK: {task.id}
+
+{task_desc_section}{task_history}{codex_section}{planning_section}
+
+## Your Assignment
+
+Read task details from `.relay/tasks.db`:
+```sql
+SELECT * FROM tasks WHERE id = '{task.id}'
 ```
 
-**CRITICAL REQUIREMENTS:**
-- Migration must be idempotent (safe to run multiple times)
-- Migration must be reversible
-- No hardcoded IDs or production data
-- Test both forward and backward migrations
-- Document any data transformation risks
-
-**SINGLE source of truth:**
-- tasks table: Task data and status
-- `.relay/logs/{task.id}.md`: Migration creation history
-- Once status is updated to ready_for_qa, EXIT immediately
+The description field explains what schema changes need migration files.
 """
 
     def _all_tasks_complete(self) -> bool:
