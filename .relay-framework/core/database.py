@@ -294,16 +294,25 @@ class TaskDatabase:
 
         This method is idempotent - it only adds missing agents, won't duplicate existing ones.
         Called automatically on TaskDatabase initialization.
+
+        Uses centralized agent type definitions from agent_types.py to ensure consistency.
         """
-        # Define all supported agent types with 5 agents per type
-        AGENT_TYPES = [
-            ("backend_developer", "Backend"),
-            ("frontend_developer", "Frontend"),
-            ("database_developer", "Database"),
-            ("devops_developer", "DevOps"),
-            ("qa", "QA"),
-            ("security", "Security"),
-        ]
+        from core.agent_types import ALL_AGENT_TYPES
+
+        # Map agent types to display names
+        DISPLAY_NAMES = {
+            "backend_developer": "Backend",
+            "frontend_developer": "Frontend",
+            "database_developer": "Database",
+            "devops_developer": "DevOps",
+            "ui_designer": "UI Designer",
+            "qa": "QA",
+            "security": "Security",
+        }
+
+        # Build agent types list from centralized definition
+        AGENT_TYPES = [(agent_type, DISPLAY_NAMES.get(agent_type, agent_type.title()))
+                       for agent_type in ALL_AGENT_TYPES]
 
         session = self.get_session()
         try:
@@ -339,18 +348,38 @@ class TaskDatabase:
 
     # Task operations
     def create_task(self, task_data: Dict[str, Any]) -> Task:
-        """Create a new task with status validation."""
+        """Create a new task with status and role validation."""
         # Validate status if provided
         status = task_data.get('status', 'todo')
         if status not in VALID_TASK_STATUSES:
-            import logging
-            logger = logging.getLogger(__name__)
             logger.warning(
                 f"Invalid status '{status}' for task {task_data.get('id', '?')}. "
                 f"Valid statuses: {', '.join(sorted(VALID_TASK_STATUSES))}. "
                 f"Defaulting to 'todo'."
             )
             task_data['status'] = 'todo'
+
+        # Validate role (agent type) if provided
+        if 'role' in task_data and task_data['role']:
+            from core.agent_types import ALL_AGENT_TYPES, normalize_agent_type, get_default_agent_type
+
+            role = task_data['role']
+            if role not in ALL_AGENT_TYPES:
+                # Try to normalize (e.g., "devops" → "devops_developer")
+                normalized = normalize_agent_type(role)
+                if normalized in ALL_AGENT_TYPES:
+                    logger.warning(
+                        f"Task {task_data.get('id', '?')} has non-standard role '{role}', "
+                        f"normalizing to '{normalized}'"
+                    )
+                    task_data['role'] = normalized
+                else:
+                    logger.warning(
+                        f"Task {task_data.get('id', '?')} has invalid role '{role}'. "
+                        f"Valid roles: {', '.join(ALL_AGENT_TYPES)}. "
+                        f"Defaulting to '{get_default_agent_type()}'."
+                    )
+                    task_data['role'] = get_default_agent_type()
 
         session = self.get_session()
         try:

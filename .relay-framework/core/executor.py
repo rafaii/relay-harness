@@ -1014,11 +1014,18 @@ class Executor:
                     # New task - use role field directly
                     role = task.role
 
-                # Validate role
-                valid_roles = ["frontend_developer", "backend_developer", "database_developer", "ui_designer", "devops_developer"]
-                if role not in valid_roles:
-                    logger.warning(f"Task {task.id} has invalid role: {role}. Defaulting to backend_developer")
-                    role = "backend_developer"
+                # Validate role using centralized definition
+                from core.agent_types import DEVELOPER_AGENT_TYPES, normalize_agent_type, get_default_agent_type
+
+                if role not in DEVELOPER_AGENT_TYPES:
+                    # Try to normalize first (e.g., "devops" → "devops_developer")
+                    normalized = normalize_agent_type(role)
+                    if normalized in DEVELOPER_AGENT_TYPES:
+                        logger.warning(f"Task {task.id} has non-standard role '{role}', normalized to '{normalized}'")
+                        role = normalized
+                    else:
+                        logger.warning(f"Task {task.id} has invalid role: {role}. Defaulting to {get_default_agent_type()}")
+                        role = get_default_agent_type()
 
                 # RACE CONDITION PREVENTION: Spawn agent FIRST, then claim atomically
                 # Step 1: Get an available agent for this role
