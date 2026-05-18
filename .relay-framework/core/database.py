@@ -6,6 +6,7 @@ SQLite database for task management with SQLAlchemy ORM.
 """
 
 import json
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Dict, Optional, Any
@@ -24,6 +25,8 @@ from sqlalchemy import (
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import Session, sessionmaker, relationship
 from sqlalchemy.pool import StaticPool
+
+logger = logging.getLogger(__name__)
 
 Base = declarative_base()
 
@@ -281,6 +284,54 @@ class TaskDatabase:
             conn.commit()
 
         self.Session = sessionmaker(bind=self.engine)
+
+        # Initialize agent pool on first run
+        self._ensure_agent_pool_initialized()
+
+    def _ensure_agent_pool_initialized(self):
+        """
+        Ensure all required agent types are registered in the database.
+
+        This method is idempotent - it only adds missing agents, won't duplicate existing ones.
+        Called automatically on TaskDatabase initialization.
+        """
+        # Define all supported agent types with 5 agents per type
+        AGENT_TYPES = [
+            ("backend_developer", "Backend"),
+            ("frontend_developer", "Frontend"),
+            ("database_developer", "Database"),
+            ("devops_developer", "DevOps"),
+            ("qa", "QA"),
+            ("security", "Security"),
+        ]
+
+        session = self.get_session()
+        try:
+            for agent_type, display_name in AGENT_TYPES:
+                # Check if agents of this type exist
+                existing_count = session.query(Agent).filter_by(agent_type=agent_type).count()
+
+                if existing_count == 0:
+                    # Register 5 agents for this type
+                    for i in range(5):
+                        agent_id = f"{agent_type}_{i}" if i > 0 else agent_type
+                        agent_name = f"{display_name} {i}" if i > 0 else display_name
+
+                        agent = Agent(
+                            agent_id=agent_id,
+                            agent_name=agent_name,
+                            agent_type=agent_type
+                        )
+                        session.add(agent)
+
+                    logger.info(f"Registered 5 agents for type: {agent_type}")
+
+            session.commit()
+        except Exception as e:
+            logger.error(f"Failed to initialize agent pool: {e}")
+            session.rollback()
+        finally:
+            session.close()
 
     def get_session(self) -> Session:
         """Get new database session."""
