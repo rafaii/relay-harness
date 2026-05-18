@@ -181,9 +181,10 @@ async def _update_vault_file(
     prompt = _build_vault_update_prompt(vault_file, task_id, task_data, task_log)
 
     try:
-        # Get model ID
+        # Get model ID for vault writer
+        # Try codex_writer first, fall back to backend_developer if not configured
         from core.config import get_model_id_for_agent
-        model_id = get_model_id_for_agent("backend")  # Use backend model for vault updates
+        model_id = get_model_id_for_agent("codex_writer")  # Use codex_writer model for vault updates
 
         # Spawn Claude to generate ONLY the new entry
         process = subprocess.Popen(
