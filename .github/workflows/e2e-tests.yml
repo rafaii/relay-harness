@@ -1,0 +1,209 @@
+name: E2E Tests
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  e2e-tests:
+    name: Playwright E2E Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: src/frontend/package-lock.json
+
+      # Create test environment file with required secrets
+      - name: Create test environment file
+        run: |
+          cd src
+          cat > .env << 'EOF'
+          NODE_ENV=test
+          PORT=3000
+          API_PREFIX=api
+          DEBUG_MODE=false
+          SIMULATION_MODE=false
+
+          # Database
+          POSTGRES_PASSWORD=test-password-123
+
+          # JWT & Encryption
+          RS_PRIVATE_KEY=test-key
+          RS_PUBLIC_KEY=test-key
+          JWT_PRIVATE_KEY=test-key
+          JWT_PUBLIC_KEY=test-key
+          ADMIN_RS_PRIVATE_KEY=test-key
+          ADMIN_RS_PUBLIC_KEY=test-key
+          CSRF_SECRET=test-csrf-secret-32-chars-minimum
+          ENCRYPTION_KEY=test-encryption-key-32-chars-min
+          DB_ENCRYPTION_KEY=test-db-key-32-chars-minimum-len
+          SQLITE_MASTER_KEY=test-sqlite-key-32-chars-minimum
+          CHANNEL_ENCRYPTION_KEY=test-channel-key-32-chars-min
+
+          # URLs
+          FRONTEND_URL=http://localhost:80
+          WEBHOOK_BASE_URL=http://localhost:3000/api
+          GOOGLE_CALLBACK_URL=http://localhost:3000/api/auth/google/callback
+          MICROSOFT_CALLBACK_URL=http://localhost:3000/api/auth/microsoft/callback
+          GOOGLE_REDIRECT_URI=http://localhost:3000/api/integrations/google-calendar/callback
+
+          # API Keys (test values)
+          API_INTERNAL_KEY=test-internal-key
+          WHATSAPP_VERIFY_TOKEN=test-verify-token
+          TWILIO_ACCOUNT_SID=test-twilio-sid
+          TWILIO_AUTH_TOKEN=test-twilio-token
+          OPENAI_API_KEY=test-openai-key
+          DEEPGRAM_API_KEY=test-deepgram-key
+          STRIPE_SECRET_KEY=test-stripe-key
+          STRIPE_WEBHOOK_SECRET=test-stripe-webhook-secret
+          POSTMARK_SERVER_TOKEN=test-postmark-token
+          EOF
+
+      # Start database and cache services
+      - name: Start postgres and redis
+        run: |
+          cd src
+          docker-compose up -d postgres redis
+          echo "⏳ Waiting for services to be healthy..."
+          sleep 15
+          docker-compose ps
+
+      # Build and start backend API
+      - name: Build and start backend
+        run: |
+          cd src
+          docker-compose up -d backend
+          echo "⏳ Waiting for backend to start..."
+          sleep 30
+          docker-compose ps
+          docker-compose logs backend --tail=50
+
+      # Wait for backend API to be ready
+      - name: Wait for backend health check
+        run: |
+          echo "🔍 Checking backend health..."
+          timeout 90 bash -c 'until curl -f http://localhost:3000/api/health 2>/dev/null; do echo "Waiting for backend API..."; sleep 3; done'
+          echo "✅ Backend API is ready"
+
+      # Build and start frontend
+      - name: Build and start frontend
+        run: |
+          cd src
+          docker-compose up -d frontend
+          echo "⏳ Waiting for frontend to start..."
+          sleep 20
+          docker-compose ps
+          docker-compose logs frontend --tail=50
+
+      # Wait for frontend to be ready
+      - name: Wait for frontend health check
+        run: |
+          echo "🔍 Checking frontend health..."
+          timeout 60 bash -c 'until curl -f http://localhost:80 2>/dev/null; do echo "Waiting for frontend..."; sleep 3; done'
+          echo "✅ Frontend is ready"
+
+      # Install Playwright dependencies
+      - name: Install frontend dependencies
+        run: |
+          cd src/frontend
+          npm ci
+
+      - name: Install Playwright browsers
+        run: |
+          cd src/frontend
+          npx playwright install --with-deps chromium
+
+      # Create test user credentials file
+      - name: Create test credentials
+        run: |
+          cd src/frontend
+          cat > .env.test << 'EOF'
+          PLAYWRIGHT_TEST_USERNAME=testuser@example.com
+          PLAYWRIGHT_TEST_PASSWORD=TestPassword123!
+          VITE_API_URL=http://localhost:3000/api
+          EOF
+
+      # Run authentication setup (CI-specific)
+      - name: Setup authentication
+        run: |
+          cd src/frontend
+          npx playwright test e2e/auth.setup.ci.spec.ts --config=playwright.config.ci.ts
+        continue-on-error: false
+
+      # Run E2E tests
+      - name: Run Playwright E2E tests
+        run: |
+          cd src/frontend
+          npx playwright test --config=playwright.config.ci.ts
+        env:
+          CI: true
+
+      # Upload test results
+      - name: Upload Playwright report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report
+          path: src/frontend/playwright-report/
+          retention-days: 30
+
+      # Upload test videos
+      - name: Upload test videos
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-videos
+          path: src/frontend/test-results/**/video.webm
+          retention-days: 30
+
+      # Upload test screenshots
+      - name: Upload test screenshots
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-screenshots
+          path: src/frontend/test-results/**/*.png
+          retention-days: 30
+
+      # Show test summary
+      - name: Test summary
+        if: always()
+        run: |
+          echo "## 🎭 Playwright E2E Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -f src/frontend/playwright-report/index.html ]; then
+            echo "✅ Tests completed. View the full report in the artifacts." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ Test report not generated. Check logs for details." >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "- 📊 Test Report: playwright-report" >> $GITHUB_STEP_SUMMARY
+          echo "- 🎥 Videos: playwright-videos" >> $GITHUB_STEP_SUMMARY
+          echo "- 📸 Screenshots: playwright-screenshots" >> $GITHUB_STEP_SUMMARY
+
+      # Cleanup
+      - name: Stop services
+        if: always()
+        run: |
+          cd src
+          docker-compose down -v
+          docker-compose ps

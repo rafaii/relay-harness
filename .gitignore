@@ -14,8 +14,20 @@ CLAUDE.md
 .relay/*
 !.relay/config.yaml
 
-# Local environment variables
+# Environment variables (never commit secrets!)
 .env
+.env.local
+.env.*.local
+.env.production
+*.env
+!.env.example
+!.env.development
+!.env.production.template
 
 # macOS
 .DS_Store
+
+# Backup files
+*.bak
+*.bak[0-9]
+*.bak[0-9][0-9]

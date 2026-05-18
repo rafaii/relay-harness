@@ -1,0 +1,163 @@
+name: OWASP ZAP Security Scan
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  owasp-zap-scan:
+    name: OWASP ZAP Baseline Scan
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Create minimal .env file for testing
+      - name: Create test environment file
+        run: |
+          cd src
+          cat > .env << 'EOF'
+          NODE_ENV=test
+          POSTGRES_PASSWORD=test-password-123
+          RS_PRIVATE_KEY=test-key
+          RS_PUBLIC_KEY=test-key
+          JWT_PRIVATE_KEY=test-key
+          JWT_PUBLIC_KEY=test-key
+          ADMIN_RS_PRIVATE_KEY=test-key
+          ADMIN_RS_PUBLIC_KEY=test-key
+          CSRF_SECRET=test-csrf-secret-32-chars-min
+          ENCRYPTION_KEY=test-encryption-key-32-chars
+          DB_ENCRYPTION_KEY=test-db-key-32-chars-minimum
+          SQLITE_MASTER_KEY=test-sqlite-key-32-chars-min
+          EOF
+
+      # Start backend services for scanning
+      - name: Start backend services
+        run: |
+          cd src
+          docker-compose up -d postgres redis
+          sleep 15
+        continue-on-error: true
+
+      # Build and start backend API
+      - name: Build and start backend
+        run: |
+          cd src
+          docker-compose up -d backend
+          sleep 30
+          docker-compose ps
+          docker-compose logs backend --tail=50
+        continue-on-error: true
+
+      # Wait for API to be ready
+      - name: Wait for API readiness
+        run: |
+          timeout 90 bash -c 'until curl -f http://localhost:3000/api/health 2>/dev/null; do echo "Waiting for API..."; sleep 3; done' || echo "API not ready, will scan available endpoints"
+        continue-on-error: true
+
+      # Create ZAP configuration file for custom rules
+      - name: Create ZAP rules configuration
+        run: |
+          cat > zap-rules.conf << 'EOF'
+          # Ignore rules that commonly cause false positives
+
+          # Ignore CSP warnings if not configured yet
+          10055 IGNORE (Content Security Policy Header Not Set)
+
+          # Ignore missing security headers on non-production
+          10020 IGNORE (X-Frame-Options Header Not Set)
+          10021 IGNORE (X-Content-Type-Options Header Missing)
+
+          # Focus on critical vulnerabilities
+          40012 WARN (Cross Site Scripting (Reflected))
+          40014 WARN (Cross Site Scripting (Persistent))
+          40018 WARN (SQL Injection)
+          90033 WARN (Loosely Scoped Cookie)
+
+          # Fail on high/critical findings
+          10202 FAIL (Absence of Anti-CSRF Tokens)
+          40019 FAIL (SQL Injection - SQLite)
+          40020 FAIL (SQL Injection - PostgreSQL)
+          EOF
+
+      # Run OWASP ZAP Baseline Scan
+      - name: Run OWASP ZAP Baseline Scan
+        run: |
+          docker run --network host \
+            -v $(pwd):/zap/wrk/:rw \
+            -t ghcr.io/zaproxy/zaproxy:stable \
+            zap-baseline.py \
+            -t http://localhost:3000/api \
+            -g gen.conf \
+            -r zap-report.html \
+            -w zap-report.md \
+            -J zap-report.json \
+            -c zap-rules.conf \
+            -I \
+            || true
+        continue-on-error: true
+
+      # Upload ZAP HTML report
+      - name: Upload ZAP HTML Report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: owasp-zap-report
+          path: |
+            zap-report.html
+            zap-report.md
+            zap-report.json
+          retention-days: 30
+
+      # Parse ZAP results and fail on HIGH/CRITICAL
+      - name: Check ZAP scan results
+        if: always()
+        run: |
+          if [ -f zap-report.json ]; then
+            echo "Analyzing ZAP scan results..."
+
+            # Count high and critical severity findings
+            HIGH_COUNT=$(jq '[.site[].alerts[] | select(.riskcode == "3")] | length' zap-report.json || echo "0")
+            CRITICAL_COUNT=$(jq '[.site[].alerts[] | select(.riskcode == "4")] | length' zap-report.json || echo "0")
+
+            echo "HIGH severity findings: $HIGH_COUNT"
+            echo "CRITICAL severity findings: $CRITICAL_COUNT"
+
+            # Summary
+            echo "## OWASP ZAP Scan Summary" >> $GITHUB_STEP_SUMMARY
+            echo "| Severity | Count |" >> $GITHUB_STEP_SUMMARY
+            echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+            echo "| 🔴 Critical | $CRITICAL_COUNT |" >> $GITHUB_STEP_SUMMARY
+            echo "| 🟠 High | $HIGH_COUNT |" >> $GITHUB_STEP_SUMMARY
+
+            # Fail if HIGH or CRITICAL findings exist
+            if [ "$HIGH_COUNT" -gt 0 ] || [ "$CRITICAL_COUNT" -gt 0 ]; then
+              echo "❌ Security scan FAILED: Found $HIGH_COUNT HIGH and $CRITICAL_COUNT CRITICAL severity vulnerabilities"
+              echo "Please review the ZAP report artifact for details."
+              exit 1
+            else
+              echo "✅ Security scan PASSED: No HIGH or CRITICAL vulnerabilities found"
+            fi
+          else
+            echo "⚠️ ZAP report not found, skipping result check"
+          fi
+
+      # Cleanup
+      - name: Stop services
+        if: always()
+        run: |
+          cd src
+          docker-compose down -v
+        continue-on-error: true

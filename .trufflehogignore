@@ -1,0 +1,50 @@
+# TruffleHog Ignore File
+# This file contains patterns for false positives and intentionally committed test/example secrets
+
+# Test/Mock credentials (DO NOT add real credentials here)
+# Example patterns for testing only
+**/test/**/*_example_key*
+**/tests/**/*mock*
+**/__tests__/**/*fixture*
+**/*.spec.ts
+**/*.test.ts
+**/*.spec.js
+**/*.test.js
+
+# Example/Template files
+.env.example
+.env.template
+.env.development.template
+.env.production.template
+**/*.example.*
+**/*.template.*
+
+# Documentation files with example secrets
+docs/**/*example*
+**/README.md
+**/EXAMPLES.md
+
+# Exclude common false positives
+# JWT example tokens in docs
+# SHA256 hashes that look like secrets
+# UUIDs that trigger false positives
+
+# Frontend build artifacts
+**/node_modules/**
+**/dist/**
+**/build/**
+**/.next/**
+
+# Generated files
+**/*.min.js
+**/*.bundle.js
+
+# Git and IDE files
+.git/**
+.idea/**
+.vscode/**
+
+# Lock files (often contain checksums that trigger false positives)
+**/package-lock.json
+**/yarn.lock
+**/pnpm-lock.yaml
